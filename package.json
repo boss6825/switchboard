@@ -1,0 +1,29 @@
+{
+  "name": "switchboard-agents",
+  "version": "0.1.0",
+  "description": "Let Claude Code, Codex, Cursor and OpenCode read each other's chats and use each other as sub-agents.",
+  "type": "module",
+  "bin": {
+    "switchboard": "skills/switchboard/scripts/switchboard.mjs"
+  },
+  "files": [
+    "skills",
+    "docs",
+    ".claude-plugin",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "test": "node --test tests/"
+  },
+  "keywords": ["claude-code", "codex", "cursor", "opencode", "coding-agents", "sub-agents", "handoff", "multi-agent"],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/boss6825/switchboard.git"
+  },
+  "license": "MIT",
+  "author": "Arpit Solanki"
+}

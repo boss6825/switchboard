@@ -1,0 +1,15 @@
+{
+  "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
+  "name": "switchboard",
+  "description": "Let your coding agents read each other's chats and use each other as sub-agents.",
+  "owner": { "name": "Arpit Solanki" },
+  "plugins": [
+    {
+      "name": "switchboard",
+      "description": "Continue another agent's chat (Claude Code, Codex, Cursor, OpenCode) and delegate work to them as background sub-agents under your model policy.",
+      "version": "0.1.0",
+      "source": "./",
+      "category": "development"
+    }
+  ]
+}

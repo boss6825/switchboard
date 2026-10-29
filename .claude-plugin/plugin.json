@@ -1,0 +1,8 @@
+{
+  "name": "switchboard",
+  "version": "0.1.0",
+  "description": "Let Claude Code, Codex, Cursor and OpenCode read each other's chats and use each other as sub-agents: hand off a chat when one agent hits its usage limit, and delegate bounded work to cheaper models under a per-agent model policy.",
+  "author": { "name": "Arpit Solanki" },
+  "license": "MIT",
+  "keywords": ["claude-code", "codex", "cursor", "opencode", "handoff", "sub-agents", "delegation"]
+}
