@@ -346,6 +346,7 @@ export default {
     // Codex's own OS sandbox: workspace-write lets it edit the workspace and run
     // commands (network off by default); read-only blocks all writes.
     args.push("-c", `sandbox_mode="${job.mode === "write" ? "workspace-write" : "read-only"}"`);
+    if (job.mode === "write") args.push("-c", "sandbox_workspace_write.network_access=false"); // pinned, whatever config.toml says
     if (job.model) args.push("-m", job.model);
     if (job.effort) args.push("-c", `model_reasoning_effort="${job.effort}"`);
     if (!job.resumeSessionId) for (const d of job.addDirs || []) args.push("--add-dir", d);

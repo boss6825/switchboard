@@ -81,8 +81,29 @@ export function which(bin) {
 // A child `claude` that inherits them ignores its saved login and reports
 // "Not logged in". A sub-agent is a fresh session, so drop them.
 const KEEP_CLAUDE_VARS = /^CLAUDE_CODE_(OAUTH_TOKEN|USE_BEDROCK|USE_VERTEX|USE_FOUNDRY|SKIP_.*_AUTH|MAX_OUTPUT_TOKENS|GIT_BASH_PATH)$/;
-export function childEnv(extra = {}) {
+
+// Each vendor's own credentials. A sub-agent from one vendor never receives
+// another vendor's keys (a shell command it runs could print them into a
+// transcript that goes to its provider). OpenCode is multi-provider and reads
+// provider keys from the environment by design, so it keeps the API keys.
+const VENDOR_KEYS = {
+  claude: /^(ANTHROPIC_API_KEY|ANTHROPIC_AUTH_TOKEN|CLAUDE_CODE_OAUTH_TOKEN)$/,
+  codex: /^(OPENAI_API_KEY|CODEX_API_KEY)$/,
+  cursor: /^CURSOR_API_KEY$/,
+  opencode: /^OPENCODE_API_KEY$/,
+};
+const PROVIDER_KEYS = /^(ANTHROPIC_API_KEY|OPENAI_API_KEY)$/;
+
+export function childEnv(extra = {}, forAgent = null) {
   const env = { ...process.env };
+  if (forAgent) {
+    for (const k of Object.keys(env)) {
+      const owner = Object.keys(VENDOR_KEYS).find((v) => VENDOR_KEYS[v].test(k));
+      if (!owner || owner === forAgent) continue;
+      if (forAgent === "opencode" && PROVIDER_KEYS.test(k)) continue;
+      delete env[k];
+    }
+  }
   if (env.CLAUDECODE || env.CLAUDE_CODE_ENTRYPOINT) {
     for (const k of Object.keys(env)) {
       if (k === "CLAUDECODE" || k === "CLAUDE_PID" || k === "CLAUDE_EFFORT") delete env[k];

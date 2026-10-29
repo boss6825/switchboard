@@ -152,10 +152,11 @@ async function cmdSearch(argv) {
         continue;
       }
       if (!hit(raw) && !hit(s.title)) continue; // cheap prefilter on the raw file
-    } else if (!hit(s.title)) continue; // database-backed chats: title only
+    }
     let full;
     try {
-      full = await load(s);
+      // Database-backed chats (OpenCode, older Cursor editor chats) are loaded and searched in full.
+      full = await getAgent(s.agent).sessions.load(s, { preferDb: true });
     } catch {
       continue;
     }

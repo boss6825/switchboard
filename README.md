@@ -184,14 +184,22 @@ switchboard policy                                  # show it all
 | `effort` | Default effort (`low` … `max`, whatever the agent supports) |
 | `chooseModel` | `false`: the lead agent may not pick a model; the default always runs |
 | `chooseEffort` | `false`: the lead agent may not pick an effort |
-| `allow` / `deny` | Model patterns (`*` wildcard). Deny wins. Claude ids also match their short form, so `opus*` blocks `claude-opus-5-5` |
+| `allow` / `deny` | Model patterns (`*` wildcard). Deny wins. Claude ids also match their short form, so `opus*` blocks `claude-opus-5-5`. A bare family name such as `grok` allows every Grok, `-fast` ones included, unless you also deny them |
 | `efforts` | Efforts the lead agent may use |
 | `enabled` | `false`: never use this agent as a sub-agent |
 
 The policy lives in `~/.switchboard/config.json`. A job that can't get an allowed model does
-not start; there is no silent fallback. For Claude, an alias like `sonnet` is checked again
-against the model Claude actually reports at startup. If you used
-[cursor-bridge](#history) before, its Cursor policy is imported on first run.
+not start; there is no silent fallback. Some details that keep the rules honest:
+
+- For Claude, an alias like `sonnet` is checked again against the model Claude reports at
+  startup, and the job is stopped if that model is not allowed.
+- If an agent has an allow or deny list, it needs a named default model (Claude excepted, see
+  above): otherwise the agent's own default would run unchecked. Cursor's `auto` router is
+  refused for the same reason.
+- `resume` checks the session's model against today's policy, so tightening the rules also
+  applies to sessions started before.
+
+If you used [cursor-bridge](#history) before, its Cursor policy is imported on first run.
 
 ## How delegation works
 
@@ -231,16 +239,22 @@ Everything is read-only. Switchboard never edits or deletes another agent's chat
 
 - **Write jobs run without permission prompts**, because nobody is there to approve them:
   Cursor with `--force`, Claude Code with `--dangerously-skip-permissions`, OpenCode with
-  `--auto`. Codex runs in its own OS sandbox (`workspace-write`, no network). Read-only jobs
-  (`--mode ask`, `review`) use each agent's read-only mode.
+  `--auto`. Codex runs in its own OS sandbox (`workspace-write`, network access pinned off).
+  Read-only jobs (`--mode ask`, `review`) use each agent's read-only mode; for Claude that also
+  means no shell.
 - Sub-agents are told not to commit, push, switch branches, install global packages, or edit
   outside the workspace. **That is an instruction to the model, not something Switchboard
   enforces.** Results do flag new commits. Use `--worktree` for anything risky.
 - Transcripts can hold secrets and personal data. Switchboard reads them locally and prints
   them only to the agent or terminal that asked. The skill tells agents to treat transcript text
   as data, not as instructions.
-- Each agent runs under its own login and its own provider's terms. Switchboard does not move
-  credentials between agents.
+- Each agent runs under its own login and its own provider's terms. A sub-agent's environment
+  never contains another vendor's keys (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `CURSOR_API_KEY`,
+  `CLAUDE_CODE_OAUTH_TOKEN`, ...), so a command it runs can't print them into its transcript.
+  OpenCode keeps the provider API keys, because it uses them to reach those providers.
+- One write job per repository at a time (use `--worktree` for parallel writers). If a job's
+  supervisor dies, the job shows as `lost` while its agent keeps running, still holds the lock,
+  and `cancel` stops it.
 
 ## Tested with
 
@@ -264,6 +278,9 @@ users are welcome.
   fake CLI in `tests/fakes/` documents the shapes Switchboard expects.
 - Cursor transcripts have no tool results, and many older Cursor editor chats are encrypted.
 - Jobs are one-shot: you can't steer a running job. Cancel and re-brief, or `resume` after it ends.
+- `doctor` checks that each CLI is logged in, not how much quota or credit is left.
+- Changes are measured with `git status`, so files git ignores don't appear in the measured list;
+  edits the agent reported to such files are listed separately.
 - A job takes a few seconds (Codex, Claude) to about 45 seconds (Cursor) to start.
 
 ## Adding an agent
@@ -272,6 +289,14 @@ Each agent is one file implementing the same interface: find its CLI, check its 
 and read its chats, resolve model names, build the headless command, and parse its event
 stream. See [docs/adding-an-agent.md](docs/adding-an-agent.md). Gemini CLI, Amp, and Aider are
 natural next ones.
+
+## How this was reviewed
+
+Besides the tests, Switchboard was used on itself: it ran an adversarial review of its own code
+on Cursor (newest Grok, highest effort, read-only). Of its 20 findings, 19 held up: 18 were
+fixed in code (most with a regression test), and one (a bare family name in an allow list
+covers every model of that family) is intended and is now documented above. One, about git
+rename parsing, was checked against git's real output and rejected.
 
 ## History
 

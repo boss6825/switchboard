@@ -9,7 +9,7 @@ import path from "node:path";
 const kind = process.env.FAKE_KIND;
 const args = process.argv.slice(2);
 const log = (o) => process.env.FAKE_ARGS_LOG && fs.appendFileSync(process.env.FAKE_ARGS_LOG, JSON.stringify(o) + "\n");
-log({ kind, args, simple: process.env.CLAUDE_CODE_SIMPLE || null, claudecode: process.env.CLAUDECODE || null });
+log({ kind, args, simple: process.env.CLAUDE_CODE_SIMPLE || null, claudecode: process.env.CLAUDECODE || null, keys: Object.keys(process.env).filter((k) => /API_KEY|OAUTH_TOKEN|AUTH_TOKEN/.test(k)).sort() });
 const out = (o) => process.stdout.write(JSON.stringify(o) + "\n");
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 

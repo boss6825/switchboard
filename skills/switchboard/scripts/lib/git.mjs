@@ -26,7 +26,8 @@ export function snapshot(dir) {
     const entry = parts[i];
     const code = entry.slice(0, 2);
     files[entry.slice(3)] = code;
-    if (code[0] === "R" || code[0] === "C") i++; // skip the rename source
+    // With -z a rename is "R  new\0old\0": the entry is the new path; skip the old one.
+    if (/[RC]/.test(code)) i++;
   }
   const paths = Object.keys(files).slice(0, 2000);
   const hashes = {};

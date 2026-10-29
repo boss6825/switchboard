@@ -37,6 +37,7 @@ Use another agent as a sub-agent (background jobs):
       --worktree                   Run in a fresh git worktree (safe for parallel writers)
       --wait                       Block until done (up to --wait-timeout secs, default 540)
       --timeout <secs>             Stop the job after this long (default 1800)
+      --raw                        Send the task without the standard sub-agent rules (advanced)
   review <agent> [--base <ref>] [focus]   Read-only adversarial review of the current diff
   resume <job> <follow-up>         Continue a finished job's session
   status [job] [--all] · wait [job...] [--any] · tail <job> [-f] · result [job...] · cancel <job>|--all

@@ -106,12 +106,12 @@ function eventsFromMessage(msg, out) {
   if (info.error) out.push({ ts, type: "error", text: info.error.data?.message || info.error.name || JSON.stringify(info.error) });
 }
 
-async function loadSession(meta) {
+async function loadSession(meta, { preferDb = false } = {}) {
   const events = [];
   const notes = [];
   const bin = adapter.bin();
   let loaded = false;
-  if (bin) {
+  if (bin && !(preferDb && exists(DB()))) {
     const r = run(bin, ["export", meta.id], { timeout: 120000 });
     const start = r.out.indexOf("{");
     if (r.ok && start >= 0) {
@@ -198,7 +198,8 @@ const adapter = {
     if (ids.length && !ids.includes(want)) die(`"${want}" is not in \`opencode models\` (see: switchboard models opencode ${want.split("/")[0]})`);
     return { id: want, effort };
   },
-  matchNames: (id) => [id, id.split("/").pop()],
+  // Full provider/model only: "claude-sonnet-5-5" must not also allow some-other-provider/claude-sonnet-5-5.
+  matchNames: (id) => [id],
   isLatestOf(pattern, id) {
     return newestMatching(pattern, fetchModels()) === id;
   },
@@ -216,6 +217,7 @@ const adapter = {
 
   parser(ctx) {
     let started = false;
+    let errored = false;
     let tokens = { input: 0, output: 0, reasoning: 0 };
     let cost = 0;
     return (ev) => {
@@ -248,10 +250,11 @@ const adapter = {
           }
           if (p.cost) cost += p.cost;
           if (cost) ctx.state.costUsd = cost;
-          if (p.reason === "stop") ctx.final({ isError: false, usage: tokens, costUsd: cost || null });
+          if (p.reason === "stop" && !errored) ctx.final({ isError: false, usage: tokens, costUsd: cost || null });
           break;
         case "error": {
           const msg = ev.error?.data?.message || ev.error?.message || ev.error?.name || JSON.stringify(ev.error || ev);
+          errored = true;
           ctx.error(msg);
           ctx.final({ isError: true, result: msg });
           break;

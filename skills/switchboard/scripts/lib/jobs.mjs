@@ -17,7 +17,7 @@ import { snapshot, diffSnapshots, git, repoRoot, defaultBranch } from "./git.mjs
 import { agent as getAgent, agentNames } from "./agents/index.mjs";
 import {
   die, readJSON, writeJSON, parseArgs, readStdin, pidAlive, realPath,
-  fmtDuration, clock, oneLine, SbError, childEnv,
+  fmtDuration, clock, oneLine, SbError, childEnv, canon,
 } from "./util.mjs";
 
 export const TERMINAL = new Set(["done", "failed", "cancelled", "timeout", "lost"]);
@@ -38,9 +38,20 @@ function newJobId(prefix) {
   return `${prefix}-${md}-${crypto.randomBytes(3).toString("hex")}`;
 }
 
-const jobDir = (id) => path.join(JOBS, id);
+const JOB_ID = /^[a-z]{2}-\d{4}-[0-9a-f]{6}$/;
+const jobDir = (id) => {
+  if (!JOB_ID.test(id)) die(`not a job id: "${id}"`);
+  return path.join(JOBS, id);
+};
+
+// The agent process outlives a crashed supervisor (it has its own process
+// group), so "lost" with a live agent still counts as running.
+const agentAlive = (j) => !!j.state.agentPid && pidAlive(j.state.agentPid);
+export const isActive = (j) => !TERMINAL.has(j.state.status) || (j.state.status === "lost" && agentAlive(j));
+const workRootOf = (j) => j.state.workRoot || j.workRoot || canon(j.state.workdir || j.cwd);
 
 export function loadJob(id) {
+  if (!JOB_ID.test(id)) return null;
   const job = readJSON(path.join(jobDir(id), "job.json"));
   if (!job) return null;
   job.state = readJSON(path.join(jobDir(id), "state.json"), { status: "queued" });
@@ -48,6 +59,8 @@ export function loadJob(id) {
   if (!TERMINAL.has(job.state.status) && job.supervisorPid && !pidAlive(job.supervisorPid)) {
     const again = readJSON(path.join(jobDir(id), "state.json"), {});
     job.state = TERMINAL.has(again.status) ? again : { ...again, status: "lost", error: "supervisor process is gone" };
+    if (job.state.status === "lost" && agentAlive(job))
+      job.state.error = `supervisor process is gone but the agent (pid ${job.state.agentPid}) is still running; stop it with: switchboard cancel ${job.id}`;
   }
   return job;
 }
@@ -55,7 +68,7 @@ export function loadJob(id) {
 export function allJobs() {
   let ids = [];
   try {
-    ids = fs.readdirSync(JOBS);
+    ids = fs.readdirSync(JOBS).filter((n) => JOB_ID.test(n));
   } catch {
     return [];
   }
@@ -189,7 +202,7 @@ export async function cmdRun(argv, extra = {}) {
   let sessionId = null;
   let effort = o.effort || null;
   let worktree = !!o.worktree;
-  const requestedModel = o.model || null;
+  let requestedModel = o.model || null;
 
   if (parent) {
     if (parent.agent !== adapter.name) die(`job ${parent.id} ran on ${parent.agent}; resume it with the same agent`);
@@ -199,6 +212,9 @@ export async function cmdRun(argv, extra = {}) {
     if (!TERMINAL.has(parent.state.status)) die(`job ${parent.id} is still ${parent.state.status}; wait for it or cancel it first`);
     cwd = parent.state.workdir || parent.cwd; // continue where it ran, worktree included
     if (!requestedModel && !effort) effort = parent.effort || null;
+    // Name the session's model again so today's policy is checked against it;
+    // a resumed session would otherwise keep a model the user has since denied.
+    if (!requestedModel && policyFor(adapter.name).chooseModel) requestedModel = parent.requestedModel || parent.model || null;
     mode = o.mode || parent.mode; // resuming a read-only review never silently becomes a writer
     worktree = false;
   }
@@ -212,11 +228,13 @@ export async function cmdRun(argv, extra = {}) {
 
   const scope = parent ? parent.scope : scopeOf(cwd);
   if (worktree && !repoRoot(cwd)) die("--worktree needs a git repository");
+  // Git measures a whole checkout, so the lock is per repository, not per folder.
+  const workRoot = canon(repoRoot(cwd) || cwd);
   if (mode === "write" && !worktree && !o["allow-concurrent"]) {
-    const clash = allJobs().find((j) => !TERMINAL.has(j.state.status) && j.mode === "write" && (j.state.workdir || j.cwd) === cwd);
+    const clash = allJobs().find((j) => isActive(j) && j.mode === "write" && workRootOf(j) === workRoot);
     if (clash)
       die(
-        `write job ${clash.id} is already editing ${cwd}. Two writers in one checkout will clobber each other.\n` +
+        `write job ${clash.id} is already editing ${workRoot}. Two writers in one checkout will clobber each other.\n` +
           `Use --worktree to isolate this job, wait for ${clash.id}, or pass --allow-concurrent if the tasks touch disjoint files.`,
       );
   }
@@ -243,6 +261,7 @@ export async function cmdRun(argv, extra = {}) {
     effort: resolved.effort,
     cwd,
     scope,
+    workRoot,
     worktree,
     worktreeBase: o["worktree-base"] || null,
     addDirs: [...(o["add-dir"] || []), ...(extra.addDirs || [])],
@@ -296,6 +315,13 @@ export function cmdSupervise([id]) {
   if (!job) process.exit(2);
   const adapter = getAgent(job.agent);
   const brief = fs.readFileSync(path.join(dir, "prompt.md"), "utf8");
+  let policyError = null;
+  try {
+    if (!policyFor(adapter.name).enabled) throw new SbError(`${adapter.label} is turned off as a sub-agent`);
+    if (job.model) checkModelAllowed(adapter, job.model, job.requestedModel);
+  } catch (e) {
+    policyError = e.message;
+  }
 
   const state = {
     status: "running",
@@ -309,6 +335,7 @@ export function cmdSupervise([id]) {
     messages: [],
     lastActivity: `starting ${adapter.label}`,
     lastEventAt: Date.now(),
+    workRoot: job.workRoot,
   };
   const activity = fs.createWriteStream(path.join(dir, "activity.log"), { flags: "a" });
   const events = fs.createWriteStream(path.join(dir, "events.jsonl"), { flags: "a" });
@@ -339,6 +366,7 @@ export function cmdSupervise([id]) {
     setTimeout(() => process.exit(0), 50);
   };
 
+  if (policyError) return fail(`policy: ${policyError}`);
   if (job.worktree) {
     try {
       const wt = makeWorktree(job);
@@ -346,6 +374,7 @@ export function cmdSupervise([id]) {
       state.worktreeTop = wt.top;
       state.branch = wt.branch;
       state.worktreeBaseCommit = wt.baseCommit;
+      state.workRoot = canon(wt.top);
       log(`created worktree ${wt.top} on branch ${wt.branch}`);
     } catch (e) {
       return fail(e.message);
@@ -355,6 +384,9 @@ export function cmdSupervise([id]) {
   const before = snapshot(workdir);
 
   let promptText = brief;
+  if (job.parent)
+    promptText = `Follow-up from the lead agent. The rules from your first brief still apply${job.mode === "write" ? " (stay in scope; no commits, pushes or branch changes; nothing outside this workspace)" : " (read-only: do not create, edit or delete files)"}.\n\n${promptText}`;
+  if (!adapter.supports.stdinPrompt && /^\s*-/.test(promptText)) promptText = `Task:\n${promptText}`;
   const addDirs = [...(job.addDirs || [])];
   if (!adapter.supports.stdinPrompt && Buffer.byteLength(brief) > MAX_INLINE_PROMPT) {
     promptText = `Your full task brief is in the file ${path.join(dir, "prompt.md")}. Read that whole file first and follow it exactly.`;
@@ -378,7 +410,7 @@ export function cmdSupervise([id]) {
       log(`session ${state.sessionId || "?"} started${model ? ` (${model})` : ""}${cwd ? ` in ${cwd}` : ""}`);
       if (model && adapter.verifiesModel) {
         try {
-          checkModelAllowed(adapter, model, job.requestedModel);
+          checkModelAllowed(adapter, model, job.requestedModel, { runtime: true });
         } catch (e) {
           kill(`policy: ${e.message}`);
         }
@@ -437,7 +469,7 @@ export function cmdSupervise([id]) {
   child = spawn(spec.bin, spec.args, {
     cwd: workdir,
     stdio: [spec.stdin != null ? "pipe" : "ignore", "pipe", "pipe"],
-    env: childEnv({ ...(spec.env || {}), SWITCHBOARD_JOB: id }),
+    env: childEnv({ ...(spec.env || {}), SWITCHBOARD_JOB: id }, adapter.name),
     detached: true, // own process group, so cancel/timeout also stops what the agent started
   });
   state.agentPid = child.pid;
@@ -540,7 +572,7 @@ export function cmdSupervise([id]) {
     // Git sees the whole checkout, so a concurrent job's (or the user's) edits
     // in the same directory land in this job's list too. Record overlaps.
     state.overlapping = allJobs()
-      .filter((x) => x.id !== id && (x.state.workdir || x.cwd) === workdir)
+      .filter((x) => x.id !== id && workRootOf(x) === state.workRoot)
       .filter((x) => (x.state.startedAt || 0) < state.endedAt && (x.state.endedAt || Infinity) > state.startedAt)
       .map((x) => `${x.id} (${x.mode})`);
 
@@ -580,8 +612,8 @@ export function cmdStatus(argv) {
   }
   const jobs = o.all ? allJobs() : scopeJobs(allJobs(), process.cwd());
   const limit = Number(o.limit || 10);
-  const running = jobs.filter((j) => !TERMINAL.has(j.state.status));
-  const recent = jobs.filter((j) => TERMINAL.has(j.state.status)).slice(-limit);
+  const running = jobs.filter(isActive);
+  const recent = jobs.filter((j) => !isActive(j)).slice(-limit);
   if (o.json) return console.log(JSON.stringify([...running, ...recent], null, 2));
   if (!running.length && !recent.length) return console.log(o.all ? "No jobs yet." : "No jobs for this repository. (--all shows every job)");
   if (running.length) {
@@ -685,7 +717,13 @@ function renderResult(j, { full = false } = {}) {
       const tag = e ? `${a.label} edit${e.added || e.removed ? ` +${e.added} -${e.removed}` : ""}` : `not via ${a.label}'s edit tool`;
       out.push(`- ${c.status.padEnd(3)} ${c.file}  [${tag}]`);
     }
-    if (s.git.changed.length && j.mode !== "write") out.push(`⚠ This job was read-only, so these changes came from elsewhere (another job, a shell command, or you).`);
+    const seen = new Set(s.git.changed.map((c) => path.join(s.git.root, c.file)));
+    const unseen = Object.entries(s.edits || {}).filter(([p]) => !seen.has(p));
+    if (unseen.length) {
+      out.push(`Edits ${a.label} reported that git does not show (ignored files, or outside the repository):`);
+      for (const [p, e] of unseen) out.push(`- ${p}  (${e.kind}${e.added || e.removed ? ` +${e.added} -${e.removed}` : ""})`);
+    }
+    if ((s.git.changed.length || unseen.length) && j.mode !== "write") out.push(`⚠ This job was read-only, so these changes came from elsewhere (another job, a shell command, or you).`);
     if (s.overlapping?.length) out.push(`⚠ Other jobs ran in this directory at the same time: ${s.overlapping.join(", ")}. Some changes above may be theirs.`);
     if (s.git.commits?.length) out.push(`\n⚠ New commits during the job:\n${s.git.commits.map((c) => `- ${c}`).join("\n")}`);
   } else if (Object.keys(s.edits || {}).length) {
@@ -722,25 +760,36 @@ export function cmdResult(argv) {
   console.log(jobs.map((j) => renderResult(j, { full: o.full })).join("\n\n" + "─".repeat(60) + "\n\n"));
 }
 
-export function cmdCancel(argv) {
+export async function cmdCancel(argv) {
   const o = parseArgs(argv, { all: "bool" });
-  const targets = o.all ? scopeJobs(allJobs(), process.cwd()).filter((j) => !TERMINAL.has(j.state.status)) : [resolveJob(o._[0])];
+  const targets = o.all ? scopeJobs(allJobs(), process.cwd()).filter(isActive) : [resolveJob(o._[0])];
   if (!targets.length) return console.log("Nothing running.");
   for (const j of targets) {
-    if (TERMINAL.has(j.state.status)) {
+    if (!isActive(j)) {
       console.log(`${j.id} already ${j.state.status}`);
       continue;
     }
     fs.writeFileSync(path.join(jobDir(j.id), "cancel"), new Date().toISOString());
     const pid = j.state.supervisorPid || j.supervisorPid;
-    try {
+    if (pidAlive(pid)) {
       process.kill(pid, "SIGTERM");
       console.log(`Cancelling ${j.id} (supervisor ${pid}).`);
-    } catch {
-      const st = readJSON(path.join(jobDir(j.id), "state.json"), {});
-      writeJSON(path.join(jobDir(j.id), "state.json"), { ...st, status: "cancelled", endedAt: Date.now() });
-      console.log(`${j.id}: supervisor already gone; marked cancelled.`);
+      continue;
     }
+    // No supervisor: stop the agent's whole process group ourselves.
+    const group = (sig) => {
+      try {
+        process.kill(-j.state.agentPid, sig);
+      } catch {}
+    };
+    if (agentAlive(j)) {
+      group("SIGTERM");
+      for (let i = 0; i < 25 && agentAlive(j); i++) await new Promise((r) => setTimeout(r, 200));
+      if (agentAlive(j)) group("SIGKILL");
+    }
+    const st = readJSON(path.join(jobDir(j.id), "state.json"), {});
+    writeJSON(path.join(jobDir(j.id), "state.json"), { ...st, status: "cancelled", endedAt: Date.now(), error: "cancelled after its supervisor was gone" });
+    console.log(`${j.id}: supervisor was gone; stopped the agent and marked it cancelled.`);
   }
 }
 

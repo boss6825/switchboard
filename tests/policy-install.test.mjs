@@ -147,3 +147,35 @@ test("install only for named agents", () => {
   assert.match(r.stdout, /\.agents\/skills\/switchboard/);
   assert.doesNotMatch(r.stdout, /\.claude\/skills/);
 });
+
+test("Claude's allow list is checked against the model it actually ran, not the alias", () => {
+  const s = sandbox();
+  s.run(["policy", "set", "claude", "allow", "sonnet", "haiku"]);
+  const r = s.run(["run", "claude", "--model", "sonnet", "--wait", "--wait-timeout", "60", "SCENARIO:slow"], { env: { FAKE_CLAUDE_MODEL: "claude-opus-5-5" } });
+  const res = s.run(["result", jobId(r.stdout)]).stdout;
+  assert.match(res, /FAILED/);
+  assert.match(res, /not in the user's allow list/);
+});
+
+test("a deny list needs a named model where the agent's default can't be checked; Cursor auto is refused", () => {
+  const s = sandbox();
+  s.run(["policy", "set", "cursor", "deny", "*-fast"]);
+  assert.match(s.run(["run", "cursor", "SCENARIO:ok"]).stderr, /deny list but no default model/);
+  assert.match(s.run(["run", "cursor", "--model", "auto", "SCENARIO:ok"]).stderr, /picks a model by itself/);
+  s.run(["policy", "set", "cursor", "model", "grok:latest"]);
+  assert.equal(s.run(["run", "cursor", "--wait", "--wait-timeout", "60", "SCENARIO:ok"]).status, 0);
+});
+
+test("reinstalling from an installed copy works, and a foreign shim is left alone", () => {
+  const s = sandbox({ agents: ["claude"] });
+  fs.mkdirSync(path.join(s.home, ".local", "bin"), { recursive: true });
+  fs.writeFileSync(path.join(s.home, ".local", "bin", "switchboard"), "#!/bin/sh\necho old\n");
+  assert.equal(s.run(["install"]).status, 0);
+  const installed = path.join(s.home, ".claude", "skills", "switchboard", "scripts", "switchboard.mjs");
+  const { spawnSync } = process.getBuiltinModule("node:child_process");
+  const r = spawnSync(process.execPath, [installed, "install"], { cwd: s.repo, env: s.env, encoding: "utf8" });
+  assert.equal(r.status, 0, r.stderr);
+  assert.match(r.stdout, /left it alone/);
+  assert.ok(fs.existsSync(installed), "the copy it ran from is still there");
+  assert.equal(fs.readFileSync(path.join(s.home, ".local", "bin", "switchboard"), "utf8"), "#!/bin/sh\necho old\n");
+});

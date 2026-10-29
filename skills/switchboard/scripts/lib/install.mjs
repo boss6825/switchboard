@@ -2,7 +2,9 @@
 // install / uninstall: put the Switchboard skill where each detected agent looks.
 
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { allAgents, agent as getAgent } from "./agents/index.mjs";
 import { describePolicy } from "./policy.mjs";
 import { SB_HOME, VERSION } from "./config.mjs";
@@ -34,7 +36,7 @@ const CONFIG_DIRS = {
 
 function skillSource() {
   // This file is skills/switchboard/scripts/lib/install.mjs
-  return path.resolve(path.dirname(new URL(import.meta.url).pathname), "..", "..");
+  return path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
 }
 
 function detect(a, { auth = true } = {}) {
@@ -182,19 +184,32 @@ export function cmdInstall(argv) {
   if (blocked.length && !o.force) die(`these folders exist and were not created by Switchboard; not touching them (use --force to replace):\n${blocked.map((b) => `  ${b}`).join("\n")}`);
   if (o["dry-run"]) return console.log("\n(dry run: nothing written)");
 
-  if (path.resolve(src) !== path.resolve(app)) copySkill(src, app);
-  for (const dir of targets.keys()) copySkill(src, path.join(dir, SKILL));
+  // Stage a copy first: when this runs from an installed copy, `src` is one of
+  // the folders about to be replaced.
+  const stage = fs.mkdtempSync(path.join(os.tmpdir(), "switchboard-install-"));
+  const staged = path.join(stage, SKILL);
+  fs.cpSync(src, staged, { recursive: true, filter: (p) => !/(^|\/)(node_modules|\.DS_Store|\.switchboard-install\.json)$/.test(path.relative(src, p)) });
+  try {
+    copySkill(staged, app);
+    for (const dir of targets.keys()) copySkill(staged, path.join(dir, SKILL));
+  } finally {
+    fs.rmSync(stage, { recursive: true, force: true });
+  }
+  let shimNote = null;
   if (linkShim) {
     fs.mkdirSync(shimDir, { recursive: true });
+    let cur = null;
     try {
-      const cur = fs.lstatSync(shim);
-      if (cur.isSymbolicLink() || o.force) fs.rmSync(shim);
+      cur = fs.lstatSync(shim);
     } catch {}
-    if (!exists(shim)) fs.symlinkSync(path.join(app, "scripts", "switchboard.mjs"), shim);
+    if (cur && (cur.isSymbolicLink() || o.force)) fs.rmSync(shim);
+    else if (cur) shimNote = `${tilde(shim)} already exists and is not a link Switchboard made; left it alone (--force replaces it).`;
+    if (!exists(shim) && !shimNote) fs.symlinkSync(path.join(app, "scripts", "switchboard.mjs"), shim);
   }
   writeJSON(path.join(SB_HOME, "install.json"), { version: VERSION, at: new Date().toISOString(), targets: [...targets.keys()].map((d) => path.join(d, SKILL)), shim: linkShim ? shim : null });
 
   console.log("\nDone.");
+  if (shimNote) console.log(`- ${shimNote}`);
   const missingCli = want.filter((r) => !r.bin);
   for (const r of missingCli) console.log(`- ${r.label}: no CLI found, so other agents cannot delegate to it or check its login. Install: ${getAgent(r.agent).installHint}`);
   if (linkShim && !onPath(shimDir)) console.log(`- ${tilde(shimDir)} is not on your PATH; add it, or run: node ${tilde(path.join(app, "scripts", "switchboard.mjs"))}`);

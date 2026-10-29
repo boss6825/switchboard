@@ -139,3 +139,9 @@ test("the calling agent's own session is excluded from last and search", () => {
   assert.notEqual(r.status, 0, "only Claude chat is the caller's own");
   assert.match(r.stderr, /no Claude Code chats/);
 });
+
+test("search reads database-backed chats, not just their titles", { skip: !sqlite }, () => {
+  const s = sandbox();
+  assert.match(s.run(["sessions", "search", "public API"]).stdout, /opencode:/);
+  assert.match(s.run(["sessions", "search", "TTL is never refreshed"]).stdout, /cursor:/);
+});

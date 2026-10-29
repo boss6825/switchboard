@@ -28,21 +28,27 @@ export function resolveModel(adapter, { requested = null, effort = null } = {}) 
     die(`${label} effort must be one of ${adapter.efforts.join(", ")} (got "${eff}")`);
 
   if (!want) {
-    if (pol.allow.length)
-      die(`${label} has an allow-list but no default model, so its own default could be anything. Set one: switchboard policy set ${adapter.name} model <id>`);
+    // With no model named, the agent runs its own default, which Switchboard
+    // can only check if the agent reports a concrete id at startup.
+    if (pol.allow.length || (pol.deny.length && !adapter.verifiesModel))
+      die(`${label} has an ${pol.allow.length ? "allow" : "deny"} list but no default model, so its own default could be one the list rules out. Set one: switchboard policy set ${adapter.name} model <id>`);
     return { id: null, effort: eff, notes, requested: null };
   }
 
   const r = adapter.resolveModel(want, eff, { notes });
+  if ((adapter.opaqueModels || []).includes(r.id) && (pol.allow.length || pol.deny.length))
+    die(`${label}'s "${r.id}" picks a model by itself, so it cannot be checked against the user's allow/deny list. Name a model instead.`);
   checkModelAllowed(adapter, r.id, want);
   return { id: r.id, effort: r.effort ?? eff, notes, requested: want };
 }
 
 // Also called after a job starts, with the model the agent actually reported:
 // an alias such as Claude's "sonnet" only becomes a concrete model at runtime.
-export function checkModelAllowed(adapter, id, requested = null) {
+// At that point only the reported model counts; the alias that was asked for
+// must not satisfy the allow list on its behalf.
+export function checkModelAllowed(adapter, id, requested = null, { runtime = false } = {}) {
   const pol = policyFor(adapter.name);
-  const names = [...new Set([requested, ...(id ? adapter.matchNames(id) : [])].filter(Boolean))];
+  const names = [...new Set([runtime ? null : requested, ...(id ? adapter.matchNames(id) : [])].filter(Boolean))];
   const blocked = names.find((n) => matchesAny(n, pol.deny));
   if (blocked) die(`${adapter.label} model "${id || requested}" is blocked by the user's deny list (${pol.deny.join(", ")})`);
   if (!pol.allow.length) return;

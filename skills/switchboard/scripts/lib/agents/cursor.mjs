@@ -10,7 +10,7 @@ import fs from "node:fs";
 import path from "node:path";
 import {
   home, which, run, readJSON, writeJSON, readText, parseJsonl, walk, mtime, toMs, cmpVersion,
-  oneLine, stripAnsi, die, exists,
+  oneLine, stripAnsi, die, exists, realPath,
 } from "../util.mjs";
 import { SB_HOME, policyFor } from "../config.mjs";
 import { query, tables } from "../sqlite.mjs";
@@ -299,10 +299,16 @@ const adapter = {
   efforts: EFFORTS,
   supports: { resume: true, modes: ["write", "ask", "plan"], stdinPrompt: false },
   verifiesModel: false, // Cursor reports a display name ("Grok 4.7 256K Low"), not the id
+  opaqueModels: ["auto"], // Cursor's router: the real model is unknown
 
   bin() {
     // Prefer the unambiguous name; "agent" is generic enough to collide.
-    return policyFor("cursor").bin || process.env.SWITCHBOARD_CURSOR_BIN || which("cursor-agent") || which("agent");
+    const explicit = policyFor("cursor").bin || process.env.SWITCHBOARD_CURSOR_BIN;
+    if (explicit) return explicit;
+    if (which("cursor-agent")) return which("cursor-agent");
+    // Cursor also installs itself as "agent", a name other tools use too; accept it only if it is Cursor's.
+    const agentBin = which("agent");
+    return agentBin && /cursor/i.test(realPath(agentBin)) ? agentBin : null;
   },
   desktop() {
     return desktopApp(["Cursor.app"], [home(".config", "Cursor")]);

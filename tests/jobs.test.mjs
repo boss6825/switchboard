@@ -145,3 +145,75 @@ test("status, tail and cleanup", () => {
   assert.match(s.run(["tail", jobId(r.stdout)]).stdout, /result success/);
   assert.match(s.run(["cleanup", "--days", "0"]).stdout, /Removed 1/);
 });
+
+test("one write lock per repository, not per folder", () => {
+  const s = sandbox();
+  fs.mkdirSync(path.join(s.repo, "pkg-a"));
+  fs.mkdirSync(path.join(s.repo, "pkg-b"));
+  const a = s.run(["run", "codex", "--cwd", path.join(s.repo, "pkg-a"), "SCENARIO:slow"]);
+  assert.equal(a.status, 0, a.stderr);
+  const b = s.run(["run", "cursor", "--cwd", path.join(s.repo, "pkg-b"), "SCENARIO:edit"]);
+  assert.notEqual(b.status, 0);
+  assert.match(b.stderr, /already editing/);
+  s.run(["cancel", jobId(a.stdout)]);
+});
+
+test("a crashed supervisor leaves a live agent that cancel still stops", async () => {
+  const s = sandbox();
+  const r = s.run(["run", "cursor", "SCENARIO:slow"]);
+  const id = jobId(r.stdout);
+  const pidFile = path.join(s.root, "child.pid");
+  for (let i = 0; i < 100 && !fs.existsSync(pidFile); i++) await new Promise((x) => setTimeout(x, 100));
+  const job = JSON.parse(fs.readFileSync(path.join(s.home, ".switchboard", "jobs", id, "job.json"), "utf8"));
+  process.kill(job.supervisorPid, "SIGKILL");
+  await new Promise((x) => setTimeout(x, 300));
+  const st = s.run(["status", id]).stdout;
+  assert.match(st, /lost/);
+  const again = s.run(["run", "claude", "SCENARIO:edit"]);
+  assert.match(again.stderr, /already editing/, "an orphaned writer still holds the lock");
+  assert.match(s.run(["cancel", id]).stdout, /stopped the agent/);
+  await new Promise((x) => setTimeout(x, 500));
+  const childPid = Number(fs.readFileSync(pidFile, "utf8"));
+  assert.throws(() => process.kill(childPid, 0), "the agent's children are gone too");
+});
+
+test("each sub-agent gets only its own vendor's keys (OpenCode keeps provider keys)", () => {
+  const s = sandbox();
+  const env = { ANTHROPIC_API_KEY: "a", OPENAI_API_KEY: "o", CURSOR_API_KEY: "c", CLAUDE_CODE_OAUTH_TOKEN: "t" };
+  for (const agent of ["claude", "codex", "cursor", "opencode"]) s.run(["run", agent, "--mode", "ask", "--wait", "--wait-timeout", "60", "SCENARIO:ok"], { env });
+  const seen = (agent) => s.lastRun(agent).keys.filter((k) => k in env); // ignore unrelated keys from this machine
+  assert.deepEqual(seen("claude"), ["ANTHROPIC_API_KEY", "CLAUDE_CODE_OAUTH_TOKEN"]);
+  assert.deepEqual(seen("codex"), ["OPENAI_API_KEY"]);
+  assert.deepEqual(seen("cursor"), ["CURSOR_API_KEY"]);
+  assert.deepEqual(seen("opencode"), ["ANTHROPIC_API_KEY", "OPENAI_API_KEY"]);
+});
+
+test("read-only Claude has no shell; Codex write mode pins network off", () => {
+  const s = sandbox();
+  s.run(["run", "claude", "--mode", "ask", "--wait", "--wait-timeout", "60", "SCENARIO:ok"]);
+  const claude = s.lastRun("claude").args;
+  assert.match(claude[claude.indexOf("--disallowedTools") + 1], /Bash/);
+  s.run(["run", "codex", "--wait", "--wait-timeout", "60", "SCENARIO:ok"]);
+  assert.ok(s.lastRun("codex").args.includes("sandbox_workspace_write.network_access=false"));
+});
+
+test("a raw prompt that starts with a dash is never read as a flag", () => {
+  const s = sandbox();
+  s.run(["run", "cursor", "--raw", "--mode", "ask", "--wait", "--wait-timeout", "60", "--", "--force SCENARIO:ok"]);
+  const args = s.lastRun("cursor").args;
+  assert.ok(!args.includes("--force"));
+  assert.match(args.at(-1), /^Task:\n--force/);
+});
+
+test("resume restates the rules and re-checks the session's model against today's policy", () => {
+  const s = sandbox();
+  const r = s.run(["run", "cursor", "--model", "gpt-5.2", "--wait", "--wait-timeout", "60", "SCENARIO:ok"]);
+  const id = jobId(r.stdout);
+  const ok = s.run(["resume", id, "SCENARIO:ok more", "--wait", "--wait-timeout", "60"]);
+  assert.equal(ok.status, 0, ok.stderr);
+  assert.match(s.lastRun("cursor").args.at(-1), /^Follow-up from the lead agent\. The rules from your first brief still apply/);
+  s.run(["policy", "set", "cursor", "deny", "gpt-*"]);
+  const no = s.run(["resume", id, "SCENARIO:ok again"]);
+  assert.notEqual(no.status, 0);
+  assert.match(no.stderr, /deny list/);
+});

@@ -245,7 +245,8 @@ export default {
     // Write jobs run without permission prompts (headless mode has nobody to ask),
     // like Cursor's --force. Read-only jobs deny anything that would need approval.
     if (job.mode === "write") args.push("--dangerously-skip-permissions");
-    else args.push("--permission-mode", "dontAsk", "--disallowedTools", "Edit,Write,NotebookEdit,MultiEdit");
+    // Read-only means no shell either: a user's own allow rules for Bash would otherwise still apply.
+    else args.push("--permission-mode", "dontAsk", "--disallowedTools", "Edit,Write,NotebookEdit,MultiEdit,Bash,PowerShell");
     if (job.resumeSessionId) args.push("--resume", job.resumeSessionId);
     for (const d of job.addDirs || []) args.push("--add-dir", d);
     return { bin: job.agentBin, args, stdin: prompt };
