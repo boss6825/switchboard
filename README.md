@@ -244,7 +244,7 @@ Everything is read-only. Switchboard never edits or deletes another agent's chat
 
 ## Tested with
 
-Offline: `node --test tests/` (35 tests; fake CLIs and synthetic chats, no network or login).
+Offline: `node --test tests/` (fake CLIs for all four agents and synthetic chats in each format; no network, logins, or model usage).
 
 Live, on macOS with Node 26.8, October 2026:
 

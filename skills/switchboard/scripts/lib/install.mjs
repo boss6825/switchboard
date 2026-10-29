@@ -6,7 +6,7 @@ import path from "node:path";
 import { allAgents, agent as getAgent } from "./agents/index.mjs";
 import { describePolicy } from "./policy.mjs";
 import { SB_HOME, VERSION } from "./config.mjs";
-import { home, exists, isDir, tilde, parseArgs, readJSON, writeJSON, which, die, table } from "./util.mjs";
+import { home, exists, isDir, tilde, parseArgs, readJSON, writeJSON, die, table } from "./util.mjs";
 
 const SKILL = "switchboard";
 const MARKER = ".switchboard-install.json";
@@ -231,4 +231,3 @@ export function cmdUninstall(argv) {
   if (!n) console.log("No installed skill folders found.");
 }
 
-export { which };

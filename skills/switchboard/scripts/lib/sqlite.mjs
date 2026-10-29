@@ -53,7 +53,7 @@ export async function query(file, sql, params = []) {
     const v = params[i++];
     return typeof v === "number" ? String(v) : `'${String(v).replace(/'/g, "''")}'`;
   });
-  const r = run(bin, ["-json", "-readonly", `file:${file}?immutable=1`, text], { timeout: 120000 });
+  const r = run(bin, ["-json", "-readonly", `file:${encodeURI(file)}?immutable=1`, text], { timeout: 120000 });
   if (!r.ok) die(`sqlite3 failed on ${file}: ${r.err.trim()}`);
   return r.out.trim() ? JSON.parse(r.out) : [];
 }

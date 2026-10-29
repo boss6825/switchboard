@@ -59,6 +59,12 @@ function isSelf(s) {
 
 const ref = (s) => s.ref || `${s.agent}:${s.id.slice(0, 8)}`;
 
+// A chat that was itself a delegated job starts with the standard sub-agent rules.
+function taskOnly(text) {
+  const i = String(text).indexOf("--- TASK ---");
+  return i >= 0 ? `[delegated job; standard sub-agent rules omitted]\n${text.slice(i + 12).trim()}` : text;
+}
+
 function listRows(list) {
   return list.map((s) => [ref(s), s.surface, ago(s.updatedAt), oneLine(s.title, 56), tilde(s.cwd || "?")]);
 }
@@ -70,6 +76,7 @@ export async function cmdSessions(argv) {
   if (sub === "show") return cmdShow(rest);
 
   const o = parseArgs(rest, LIST_SPEC);
+  if (o._.length) return cmdShow(rest); // `sessions codex:last` reads as "show it"
   const { sessions, errors } = await gather(pickAgents(o.agent), o);
   const dir = scopeDir(o);
   let list = sessions;
@@ -203,7 +210,8 @@ function renderEvents(s, events, { full = false, outputs = false, reasoning = fa
     const header = `${e.ts ? `[${stamp(e.ts).slice(11)}] ` : ""}${who}`;
     if (header !== lastHeader || e.type === "user") lines.push(`\n${header}`);
     lastHeader = header;
-    lines.push(full ? e.text : clip(e.text, e.type === "user" ? 4000 : 3000));
+    const text = e.type === "user" ? taskOnly(e.text) : e.text;
+    lines.push(full ? text : clip(text, e.type === "user" ? 4000 : 3000));
   }
   return lines.join("\n");
 }
@@ -244,6 +252,8 @@ function aggregateWork(events) {
   const web = [];
   const mcp = new Map();
   const agents = [];
+  const reads = new Set();
+  let searches = 0;
   let plan = null;
   for (const e of events) {
     if (e.type !== "tool") continue;
@@ -253,9 +263,11 @@ function aggregateWork(events) {
     else if (t.kind === "web") web.push(t.summary);
     else if (t.kind === "mcp") mcp.set(t.summary.split(" ")[0], (mcp.get(t.summary.split(" ")[0]) || 0) + 1);
     else if (t.kind === "agent") agents.push(t.summary);
+    else if (t.kind === "read") (t.paths?.length ? t.paths : [t.summary]).forEach((x) => reads.add(x));
+    else if (t.kind === "search") searches++;
     else if (t.kind === "plan" && t.items) plan = t.items;
   }
-  return { files, commands, web: [...new Set(web)], mcp, agents, plan };
+  return { files, commands, web: [...new Set(web)], mcp, agents, plan, reads: [...reads], searches };
 }
 
 function fileStatusNow(ws, files, cwd) {
@@ -291,7 +303,7 @@ You are picking up work that ${a.label} started. Everything under "What the user
   // Every user message, oldest first, each clipped; the first and last get more room.
   const perUser = Math.max(600, Math.floor((budget * 0.3) / Math.max(1, users.length)));
   parts.push(`## What the user asked (${users.length} message${users.length === 1 ? "" : "s"}, oldest first)\n` +
-    users.map((u, i) => `${i + 1}. ${u.ts ? `[${stamp(u.ts)}] ` : ""}${clip(u.text, i === 0 || i === users.length - 1 ? perUser * 3 : perUser).trim()}`).join("\n\n"));
+    users.map((u, i) => `${i + 1}. ${u.ts ? `[${stamp(u.ts)}] ` : ""}${clip(taskOnly(u.text), i === 0 || i === users.length - 1 ? perUser * 3 : perUser).trim()}`).join("\n\n"));
 
   const stop = [];
   if (s.ended && s.ended !== "unknown") stop.push(`- Last turn: ${s.ended}`);
@@ -315,6 +327,8 @@ You are picking up work that ${a.label} started. Everything under "What the user
   if (work.web.length) w.push(`Web searches and pages (${work.web.length}):\n${work.web.slice(-20).map((x) => `- ${oneLine(x, 200)}`).join("\n")}`);
   if (work.mcp.size) w.push(`MCP tools used: ${[...work.mcp.entries()].map(([k, n]) => `${k} ×${n}`).join(", ")}`);
   if (work.agents.length) w.push(`Sub-agents it started: ${work.agents.slice(-10).map((x) => oneLine(x, 80)).join("; ")}`);
+  if (work.reads.length || work.searches)
+    w.push(`It read ${work.reads.length} file${work.reads.length === 1 ? "" : "s"}${work.searches ? ` and ran ${work.searches} code search${work.searches === 1 ? "" : "es"}` : ""}${work.reads.length ? `, last ones: ${work.reads.slice(-12).map((x) => tilde(x)).join(", ")}` : ""}`);
   parts.push(`## Work done (from the transcript)\n${w.join("\n\n") || "(no tool calls recorded)"}`);
 
   const now = [];

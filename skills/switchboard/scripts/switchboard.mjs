@@ -82,7 +82,7 @@ function cmdModels(argv) {
   const o = parseArgs(argv, { refresh: "bool" });
   const a = getAgent(o._.shift()) || die(`usage: models <agent> [filter]; agents: ${agentNames().join(", ")}`);
   const filter = o._.join(" ").toLowerCase();
-  const ids = a.listModels({ refresh: o.refresh || true });
+  const ids = a.listModels({ refresh: !!o.refresh });
   if (!ids.length) return console.log(`${a.label} did not report a model list.`);
   console.log(ids.filter((id) => !filter || id.toLowerCase().includes(filter)).join("\n"));
   if (a.name === "claude") console.log("(Claude Code also accepts full model ids such as claude-sonnet-5-5.)");

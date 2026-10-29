@@ -116,7 +116,7 @@ export function textOf(content) {
   return "";
 }
 
-// "Users-arpit-projects-my-app" -> "/Users/arpit/projects/my-app", by walking
+// "Users-me-projects-my-app" -> "/Users/me/projects/my-app", by walking
 // the filesystem: each "-" is either a path separator or a literal "-" (or a
 // dropped "."), and only the reading that exists on disk is kept.
 const slugCache = new Map();
