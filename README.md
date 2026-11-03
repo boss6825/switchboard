@@ -21,6 +21,18 @@ Two things it does:
    background. The senior checks their work before anything ships. The expensive model's quota
    goes to the hard parts, and you get to use the quota you already have on every other tool.
 
+**What it saves.** In one measured run (2026-11-04), handing a small test-writing task to
+Cursor used **13% fewer Claude tokens** than Claude doing it alone: 78,131 against 89,852. Treat
+that as a first data point, not a promise:
+
+- One run per side, on one small task, with Sonnet sub-agents. It was not repeated, so part of
+  the gap may be noise.
+- Cursor's own usage is not counted. It comes out of your Cursor plan.
+- The delegated run took about 4.5 minutes against 41 seconds, and wrote 8 tests against 17.
+  Both test files passed.
+- On a small task most of the cost is fixed: loading the skill, writing the brief, checking the
+  result. Larger, well-defined tasks should save more. That is not measured yet.
+
 ```
                     you
                      │
