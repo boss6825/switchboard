@@ -22,6 +22,27 @@ const KINDS = [
   [/^(todowrite|todo|update_plan|createplan|updatecurrentstep|exitplanmode)$/i, "plan"],
 ];
 
+// What kind of failure ended a job, so the lead agent can decide without
+// reading the message: wait, log in, pick another model, or rework the task.
+// Order matters: "Free usage limit reached" is a rate limit, not a paid-model refusal.
+const ERROR_KINDS = [
+  ["not-logged-in", /not logged in|please (run )?\/?login|unauthori[sz]ed|\b401\b|authentication[_ ]failed|no credentials|invalid api key/i],
+  ["not-free", /credit balance|insufficient (credits|funds|balance|quota)|payment required|\b402\b|upgrade (your )?plan|requires a paid|not included in your plan/i],
+  ["rate-limit", /usage limit|rate.?limit|\b429\b|too many requests|free.limit|quota exceeded|try again (in|at|later)/i],
+  ["model-gone", /model.{0,60}(not found|not supported|does not exist|unavailable|retired|deprecated)|unknown model|not a valid model|is not supported with the/i],
+];
+
+export function classifyError(text = "") {
+  for (const [kind, re] of ERROR_KINDS) if (re.test(text)) return kind;
+  return "task-failed";
+}
+
+// "retry in ~78 min", "try again in 3 hours", "resets at 14:00" -> the phrase, if any.
+export function retryHint(text = "") {
+  const m = /(?:retry|try again)\s+(?:in|at|after)\s+~?[\d:.]+\s*(?:minutes?|min|hours?|seconds?|sec|days?|ms|h|m|s)\b|resets?\s+(?:in|at)\s+[^.,;)\n]{1,30}/i.exec(text);
+  return m ? m[0].trim() : null;
+}
+
 export function toolKind(name = "") {
   if (/^mcp__|^mcp[:.]|calldynamictool/i.test(name)) return "mcp";
   for (const [re, kind] of KINDS) if (re.test(name)) return kind;

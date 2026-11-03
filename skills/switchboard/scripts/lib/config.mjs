@@ -19,6 +19,9 @@
 //   efforts       efforts the orchestrator may use; empty = any the agent supports
 //   timeout       seconds before a job is stopped (default 1800)
 //   bin           path to the agent's CLI if it is not on PATH
+//   spend         "included": only free or plan-included models (see each adapter's
+//                 `included` rules); "any": paid models too. Unset = the top-level
+//                 "spend" chosen at install, which defaults to "included".
 
 import fs from "node:fs";
 import path from "node:path";
@@ -40,7 +43,10 @@ export const POLICY_KEYS = {
   efforts: "list",
   timeout: "number",
   bin: "string",
+  spend: "string",
 };
+
+export const SPEND = ["included", "any"];
 
 // Defaults favour "don't spend the expensive model on small work": Claude Code
 // as a sub-agent runs Sonnet unless the user or orchestrator says otherwise.
@@ -98,6 +104,7 @@ export function policyFor(agent) {
     efforts: p.efforts || [],
     timeout: Number(p.timeout || 1800),
     bin: p.bin || null,
+    spend: SPEND.includes(p.spend) ? p.spend : SPEND.includes(cfg.spend) ? cfg.spend : "included",
   };
 }
 
@@ -128,6 +135,13 @@ export function setPolicy(agent, key, values) {
   else cur[key] = values.join(" ");
   saveConfig(cfg);
   return cur;
+}
+
+// The install-time choice, for every agent that does not override it.
+export function setSpend(value) {
+  const cfg = loadConfig();
+  cfg.spend = value;
+  saveConfig(cfg);
 }
 
 export function unsetPolicy(agent, key) {

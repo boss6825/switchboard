@@ -332,6 +332,17 @@ const adapter = {
 
   listModels: ({ refresh = false } = {}) => fetchModels({ refresh }).ids,
   resolveModel,
+  // Cursor plans include Grok models; every other model bills at API price,
+  // and -fast variants cost more.
+  included: {
+    check(id) {
+      const p = parseModelId(id);
+      if (!p || p.family !== "grok") return "is not a Grok model, and Cursor bills non-Grok models at API price";
+      if (p.fast) return "is a -fast variant, which costs more";
+      return null;
+    },
+    defaultModel: () => "grok:latest",
+  },
   matchNames(id) {
     const p = parseModelId(id);
     return p ? [id, p.family] : [id];

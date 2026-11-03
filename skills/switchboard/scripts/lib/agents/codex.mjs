@@ -359,6 +359,8 @@ export default {
     args.push("-c", `sandbox_mode="${job.mode === "write" ? "workspace-write" : "read-only"}"`);
     if (job.mode === "write") args.push("-c", "sandbox_workspace_write.network_access=false"); // pinned, whatever config.toml says
     if (job.model) args.push("-m", job.model);
+    // Fast mode spends plan usage 1.5-2.5x faster, and some models default to it.
+    if (job.spend === "included") args.push("-c", 'service_tier="default"');
     if (job.effort) args.push("-c", `model_reasoning_effort="${job.effort}"`);
     if (!job.resumeSessionId) for (const d of job.addDirs || []) args.push("--add-dir", d);
     if (job.resumeSessionId) args.push(job.resumeSessionId);

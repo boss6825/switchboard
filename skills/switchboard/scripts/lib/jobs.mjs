@@ -13,6 +13,18 @@ import fs from "node:fs";
 import path from "node:path";
 import { JOBS, SB_HOME, VERSION, policyFor } from "./config.mjs";
 import { resolveModel, checkModelAllowed } from "./policy.mjs";
+import { classifyError, retryHint } from "./agents/common.mjs";
+
+// One line per failure kind: what the lead agent should do next.
+const KIND_HINT = {
+  "rate-limit": "this agent is out of usage for now. Wait, use another agent, or do it yourself; do not retry right away.",
+  "not-free": "the account cannot pay for this model. Do not switch to another paid model; tell the user.",
+  "not-logged-in": "the user must log in to this agent's CLI; you cannot do it for them.",
+  "model-gone": "the model is missing, retired, or does not accept this setting. Check: switchboard models <agent>.",
+  policy: "the user's policy refused this. Do not work around it; tell the user.",
+  timeout: "the job ran out of time. Resume it with a narrower task, or raise --timeout.",
+  "task-failed": "the agent ran but did not finish. Resume with what went wrong, or rerun once one step up, or do it yourself.",
+};
 import { snapshot, diffSnapshots, git, repoRoot, defaultBranch } from "./git.mjs";
 import { agent as getAgent, agentNames } from "./agents/index.mjs";
 import {
@@ -259,6 +271,7 @@ export async function cmdRun(argv, extra = {}) {
     model: resolved.id,
     requestedModel: resolved.requested,
     effort: resolved.effort,
+    spend: resolved.spend,
     cwd,
     scope,
     workRoot,
@@ -583,6 +596,8 @@ export function cmdSupervise([id]) {
       } catch {}
       const agentSaid = finalEvent?.isError && finalEvent.result ? String(finalEvent.result) : "";
       state.error ||= killedFor || agentSaid || state.agentErrors?.slice(-1)[0] || errTail || `agent exited with code ${code}${signal ? ` (${signal})` : ""}`;
+      state.errorKind = killedFor === "cancelled" || state.status === "cancelled" ? "cancelled" : killedFor?.startsWith("timeout") ? "timeout" : killedFor?.startsWith("policy") ? "policy" : classifyError([state.error, ...(state.agentErrors || []), errTail].join("\n"));
+      state.retryAfter = state.errorKind === "rate-limit" ? retryHint([state.error, ...(state.agentErrors || []), errTail].join("\n")) : null;
     }
     dirty = true;
     flush();
@@ -643,7 +658,7 @@ export async function cmdWait(argv) {
       console.log(`[${clock(Date.now())}] ${j.id} ${j.state.status} after ${fmtDuration((j.state.endedAt || Date.now()) - j.state.startedAt)} (tools=${j.state.toolCalls ?? 0})`);
     }
     if (o.any ? finished.length > 0 : finished.length === states.length) {
-      console.log(`\nFinished: ${finished.map((j) => `${j.id}=${j.state.status}`).join(", ")}`);
+      console.log(`\nFinished: ${finished.map((j) => `${j.id}=${j.state.status}${j.state.errorKind ? ` (${j.state.errorKind})` : ""}`).join(", ")}`);
       console.log(`Read the output with: ${sb()} result ${finished.map((j) => j.id).join(" ")}`);
       return;
     }
@@ -699,14 +714,14 @@ function renderResult(j, { full = false } = {}) {
   const dur = s.startedAt ? fmtDuration((s.endedAt || Date.now()) - s.startedAt) : "-";
   out.push(`# ${a.label} job ${j.id} — ${s.status.toUpperCase()}`);
   out.push(`task: ${j.name}`);
-  out.push(`mode: ${j.mode}   model: ${s.modelName || j.model || "agent default"}${j.effort ? `   effort: ${j.effort}` : ""}   time: ${dur}   tool calls: ${s.toolCalls ?? 0}`);
+  out.push(`mode: ${j.mode}   model: ${s.modelName || j.model || "agent default"}${j.effort ? `   effort: ${j.effort}` : ""}${j.spend ? `   spend: ${j.spend}` : ""}   time: ${dur}   tool calls: ${s.toolCalls ?? 0}`);
   out.push(`workdir: ${s.workdir || j.cwd}${j.worktree ? `  (isolated git worktree${s.branch ? `, branch ${s.branch}` : ""})` : ""}`);
   if (s.sessionId) out.push(`${a.label} session: ${s.sessionId}`);
   if (!TERMINAL.has(s.status)) {
     out.push(`\nStill ${s.status}. Last activity: ${s.lastActivity}`);
     return out.join("\n");
   }
-  if (s.error && s.status !== "done") out.push(`\n## Error\n${s.error}`);
+  if (s.error && s.status !== "done") out.push(`\n## Error${s.errorKind ? ` (${s.errorKind}${s.retryAfter ? `; ${s.retryAfter}` : ""})` : ""}\n${s.error}${KIND_HINT[s.errorKind] ? `\nNext: ${KIND_HINT[s.errorKind]}` : ""}`);
   out.push(`\n## ${a.label}'s answer\n${s.answer || "(no final message)"}`);
 
   if (s.git) {

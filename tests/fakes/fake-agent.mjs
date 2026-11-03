@@ -47,7 +47,7 @@ if (kind === "cursor" && args[0] === "models") {
   process.exit(0);
 }
 if (kind === "opencode" && args[0] === "models") {
-  console.log(["opencode/free-model-1.5", "opencode/free-model-2.0", "anthropic/claude-sonnet-5-5"].join("\n"));
+  console.log(["opencode/free-model-1.5", "opencode/free-model-2.0", "opencode/zen-small-free", "anthropic/claude-sonnet-5-5"].join("\n"));
   process.exit(0);
 }
 if (kind === "opencode" && args[0] === "auth") {

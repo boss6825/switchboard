@@ -76,7 +76,7 @@ test("enabled=false keeps an agent off the team", () => {
 });
 
 test("an existing cursor-bridge policy is imported once", () => {
-  const s = sandbox();
+  const s = sandbox({ spend: null });
   fs.mkdirSync(path.join(s.home, ".cursor-bridge"), { recursive: true });
   fs.writeFileSync(path.join(s.home, ".cursor-bridge", "config.json"), JSON.stringify({ model: "grok:latest", effort: "xhigh", lockModel: "true", allowFast: "false" }));
   const r = s.run(["policy"]);
@@ -149,7 +149,7 @@ test("install works when run from inside node_modules (npx)", () => {
 });
 
 test("a dry run writes nothing, not even Switchboard's own state; a real install records where it came from", () => {
-  const s = sandbox({ agents: ["claude"] });
+  const s = sandbox({ agents: ["claude"], spend: null });
   fs.mkdirSync(path.join(s.home, ".cursor-bridge"), { recursive: true });
   fs.writeFileSync(path.join(s.home, ".cursor-bridge", "config.json"), JSON.stringify({ model: "grok:latest" }));
   const dry = s.run(["install", "--dry-run"]);
@@ -197,4 +197,49 @@ test("reinstalling from an installed copy works, and a foreign shim is left alon
   assert.match(r.stdout, /left it alone/);
   assert.ok(fs.existsSync(installed), "the copy it ran from is still there");
   assert.equal(fs.readFileSync(path.join(s.home, ".local", "bin", "switchboard"), "utf8"), "#!/bin/sh\necho old\n");
+});
+
+test("spend=included: OpenCode runs free models only and picks one when none is named", () => {
+  const s = sandbox({ spend: "included" });
+  const paid = s.run(["run", "opencode", "--model", "anthropic/claude-sonnet-5-5", "SCENARIO:ok"]);
+  assert.notEqual(paid.status, 0);
+  assert.match(paid.stderr, /not one of OpenCode's free models.*spend=included.*policy spend any/s);
+  const r = s.run(["run", "opencode", "--wait", "--wait-timeout", "60", "SCENARIO:ok"]);
+  assert.equal(r.status, 0, r.stderr);
+  assert.match(r.stdout, /using free model opencode\/zen-small-free/);
+  assert.ok(s.lastRun("opencode").args.includes("opencode/zen-small-free"));
+});
+
+test("spend=included: Cursor runs Grok without -fast, defaulting to the newest Grok", () => {
+  const s = sandbox({ spend: "included" });
+  for (const [model, why] of [["gpt-5.2", /not a Grok model/], ["grok-4.7-high-fast", /-fast variant/]]) {
+    const r = s.run(["run", "cursor", "--model", model, "SCENARIO:ok"]);
+    assert.notEqual(r.status, 0, model);
+    assert.match(r.stderr, why);
+  }
+  const r = s.run(["run", "cursor", "--effort", "low", "--wait", "--wait-timeout", "60", "SCENARIO:ok"]);
+  assert.equal(r.status, 0, r.stderr);
+  assert.ok(s.lastRun("cursor").args.includes("grok-4.7-low"), JSON.stringify(s.lastRun("cursor").args));
+});
+
+test("spend=included pins Codex to standard speed; spend=any leaves its speed alone", () => {
+  for (const [spend, pinned] of [["included", true], ["any", false]]) {
+    const s = sandbox({ spend });
+    s.run(["run", "codex", "--wait", "--wait-timeout", "60", "SCENARIO:ok"]);
+    assert.equal(s.lastRun("codex").args.includes('service_tier="default"'), pinned, spend);
+  }
+});
+
+test("install asks nothing without a terminal: it keeps --spend, else defaults to included and says how to change it", () => {
+  const s = sandbox({ agents: ["claude"], spend: null });
+  const r = s.run(["install"]);
+  assert.equal(r.status, 0, r.stderr);
+  assert.match(r.stdout, /free and plan-included models only/);
+  assert.match(r.stdout, /No terminal to ask in.*policy spend any/);
+  assert.equal(JSON.parse(fs.readFileSync(path.join(s.home, ".switchboard", "config.json"))).spend, "included");
+  assert.match(s.run(["install", "--spend", "any"]).stdout, /any model, including ones billed at API prices/);
+  assert.equal(JSON.parse(fs.readFileSync(path.join(s.home, ".switchboard", "config.json"))).spend, "any");
+  assert.doesNotMatch(s.run(["install"]).stdout, /No terminal to ask in/, "an earlier choice is kept, not re-asked");
+  assert.match(s.run(["policy", "spend", "included"]).stdout, /Cursor .*spend=included/);
+  assert.notEqual(s.run(["install", "--spend", "cheap"]).status, 0);
 });

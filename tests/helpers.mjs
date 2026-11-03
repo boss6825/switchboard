@@ -35,7 +35,9 @@ export const IDS = {
   opencode: "ses_fake000000000001",
 };
 
-export function sandbox({ agents = ["claude", "codex", "cursor", "opencode"] } = {}) {
+// spend: the install-time choice to preseed ("any" so the fakes' paid-looking models run);
+// null leaves ~/.switchboard empty, as on a fresh machine.
+export function sandbox({ agents = ["claude", "codex", "cursor", "opencode"], spend = "any" } = {}) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "switchboard-test-"));
   const home = path.join(root, "home");
   const repo = path.join(home, "work", "proj");
@@ -140,6 +142,8 @@ export function sandbox({ agents = ["claude", "codex", "cursor", "opencode"] } =
     part.run("p3", "m2", IDS.opencode, t0 + 1220000, t0 + 1220000, JSON.stringify({ type: "text", text: "Docs updated in docs/api.md." }));
     db.close();
   }
+
+  if (spend) w(path.join(home, ".switchboard", "config.json"), JSON.stringify({ agents: {}, spend }));
 
   const argsLog = path.join(root, "args.log");
   const env = {

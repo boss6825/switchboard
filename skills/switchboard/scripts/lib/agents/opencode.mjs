@@ -211,6 +211,17 @@ const adapter = {
   takeover: (id) => `opencode --session ${id}`,
 
   listModels: ({ refresh = false } = {}) => fetchModels({ refresh }),
+  // OpenCode Zen's free models end in "-free"; which ones exist rotates, so
+  // read the live list (cached 6 hours) instead of keeping our own.
+  included: {
+    check: (id) => (/-free$/.test(id) ? null : "is not one of OpenCode's free models (their ids end in -free; see: switchboard models opencode)"),
+    defaultModel(notes) {
+      const free = fetchModels().filter((id) => /-free$/.test(id));
+      if (!free.length) die("no free OpenCode models are listed right now (opencode models shows none ending in -free)");
+      notes.push(`using free model ${free[0]}; free models today: ${free.join(", ")}`);
+      return free[0];
+    },
+  },
   resolveModel(want, effort, { notes }) {
     const ids = fetchModels();
     if (/:latest$/.test(want)) {

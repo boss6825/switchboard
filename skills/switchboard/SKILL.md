@@ -54,7 +54,10 @@ sb result <job>                          # its answer + files changed (measured 
 
 - **Model: follow the user's policy.** Check it once per session with `sb policy`. If the user
   locked an agent's model, never pass `--model`; choose only `--effort`. A policy error is
-  final: do not retry with another model or agent to get around it; tell the user.
+  final: do not retry with another model or agent to get around it; tell the user. The same
+  goes for `spend=included` (free and plan-included models only).
+- **A failed job says why** in `sb result` as `## Error (<kind>)` with a one-line next step:
+  `rate-limit`, `not-free`, `not-logged-in`, `model-gone`, `policy`, `timeout`, `task-failed`.
 - **Pick the agent** the user asked for. Otherwise prefer the one the policy marks as the
   cheap worker (often Cursor on Grok, or OpenCode on a free model) for mechanical work.
 - Use `--mode ask` for questions and investigation, `--worktree` for parallel or risky writes.

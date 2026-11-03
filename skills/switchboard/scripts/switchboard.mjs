@@ -8,7 +8,7 @@
 
 import fs from "node:fs";
 import { fileURLToPath } from "node:url";
-import { VERSION, SB_HOME, JOBS, POLICY_KEYS, loadConfig, setPolicy, unsetPolicy, setReadOnly } from "./lib/config.mjs";
+import { VERSION, SB_HOME, JOBS, POLICY_KEYS, SPEND, loadConfig, setPolicy, unsetPolicy, setReadOnly, setSpend } from "./lib/config.mjs";
 import { describePolicy } from "./lib/policy.mjs";
 import { agent as getAgent, allAgents, agentNames } from "./lib/agents/index.mjs";
 import { SbError, die, parseArgs } from "./lib/util.mjs";
@@ -48,6 +48,7 @@ Model policy (what sub-agents may run):
   policy                           Show every agent's policy
   policy set <agent> <key> <value...>   keys: ${Object.keys(POLICY_KEYS).join(", ")}
   policy unset <agent> <key>
+  policy spend included|any        included: only free or plan-included models (the install default)
   Examples:  policy set cursor model grok:latest      (always the newest Grok)
              policy set cursor chooseModel false       (orchestrator picks effort only)
              policy set claude allow sonnet haiku      (never Opus as a sub-agent)
@@ -55,7 +56,7 @@ Model policy (what sub-agents may run):
 
 Setup:
   doctor [--json]                  Which agents are installed, logged in, and where their chats are
-  install [--agents a,b] [--dry-run]   Install the skill for every agent found on this machine
+  install [--agents a,b] [--spend included|any] [--dry-run]   Install the skill for every agent found on this machine
   uninstall [--purge]
 
 Agents: ${agentNames().join(", ")}   ·   State: ${SB_HOME}`;
@@ -66,6 +67,12 @@ function cmdPolicy(argv) {
     const cfg = loadConfig();
     for (const a of allAgents()) console.log(`${a.label.padEnd(12)} ${describePolicy(a)}`);
     if (cfg.importedFrom) console.log(`\n(Cursor policy was imported from ${cfg.importedFrom})`);
+    return;
+  }
+  if (action === "spend") {
+    if (!SPEND.includes(name)) die(`usage: policy spend ${SPEND.join("|")}`);
+    setSpend(name);
+    for (const a of allAgents()) console.log(`${a.label.padEnd(12)} ${describePolicy(a)}`);
     return;
   }
   const a = getAgent(name) || die(`unknown agent "${name}"; one of: ${agentNames().join(", ")}`);

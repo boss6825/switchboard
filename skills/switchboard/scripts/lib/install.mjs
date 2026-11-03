@@ -7,7 +7,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { allAgents, agent as getAgent } from "./agents/index.mjs";
 import { describePolicy } from "./policy.mjs";
-import { SB_HOME, VERSION } from "./config.mjs";
+import { SB_HOME, VERSION, SPEND, loadConfig, setSpend } from "./config.mjs";
 import { home, exists, isDir, tilde, parseArgs, readJSON, writeJSON, die, table } from "./util.mjs";
 
 const SKILL = "switchboard";
@@ -163,8 +163,28 @@ function onPath(dir) {
   return (process.env.PATH || "").split(path.delimiter).some((d) => path.resolve(d) === path.resolve(dir));
 }
 
+function askSpend() {
+  if (!process.stdin.isTTY || !process.stdout.isTTY) return null;
+  process.stdout.write(
+    "\nWhich models may sub-agents use?\n" +
+      "  1) Free and plan-included only (recommended): OpenCode's free models, Cursor's Grok models\n" +
+      "     without -fast, Codex at standard speed. Nothing is billed beyond your plans.\n" +
+      "  2) Any model, including ones billed at API prices (for example non-Grok models in Cursor).\n" +
+      "Choose 1 or 2 [1]: ",
+  );
+  const buf = Buffer.alloc(16);
+  let n = 0;
+  try {
+    n = fs.readSync(0, buf, 0, buf.length, null);
+  } catch {
+    return null;
+  }
+  return buf.toString("utf8", 0, n).trim() === "2" ? "any" : "included";
+}
+
 export function cmdInstall(argv) {
-  const o = parseArgs(argv, { agents: "value", "dry-run": "bool", force: "bool", "no-shim": "bool" });
+  const o = parseArgs(argv, { agents: "value", "dry-run": "bool", force: "bool", "no-shim": "bool", spend: "value" });
+  if (o.spend && !SPEND.includes(o.spend)) die(`--spend must be one of: ${SPEND.join(", ")}`);
   const only = o.agents ? o.agents.split(",").map((n) => (getAgent(n.trim()) || die(`unknown agent "${n}"`)).name) : null;
   const rows = allAgents().map((a) => detect(a, { auth: false }));
   const { want, targets } = plan(rows, only);
@@ -183,7 +203,12 @@ export function cmdInstall(argv) {
 
   const blocked = [...targets.keys()].map((d) => path.join(d, SKILL)).filter((d) => !ownedOrAbsent(d));
   if (blocked.length && !o.force) die(`these folders exist and were not created by Switchboard; not touching them (use --force to replace):\n${blocked.map((b) => `  ${b}`).join("\n")}`);
-  if (o["dry-run"]) return console.log("\n(dry run: nothing written)");
+  // Asked once: may sub-agents run paid models? An agent running this install
+  // has no terminal, so it passes --spend after asking the user in chat.
+  const prior = loadConfig().spend;
+  const spend = o.spend || (SPEND.includes(prior) ? prior : askSpend()) || "included";
+  const spendNote = o.spend || SPEND.includes(prior) ? null : process.stdin.isTTY ? null : "No terminal to ask in, so sub-agents use free and plan-included models only. To allow paid models: switchboard policy spend any";
+  if (o["dry-run"]) return console.log(`\nSub-agent spending: ${spend}\n(dry run: nothing written)`);
 
   // Stage a copy first: when this runs from an installed copy, `src` is one of
   // the folders about to be replaced.
@@ -207,9 +232,12 @@ export function cmdInstall(argv) {
     else if (cur) shimNote = `${tilde(shim)} already exists and is not a link Switchboard made; left it alone (--force replaces it).`;
     if (!exists(shim) && !shimNote) fs.symlinkSync(path.join(app, "scripts", "switchboard.mjs"), shim);
   }
+  if (spend !== prior) setSpend(spend);
   writeJSON(path.join(SB_HOME, "install.json"), { version: VERSION, at: new Date().toISOString(), targets: [...targets.keys()].map((d) => path.join(d, SKILL)), shim: linkShim ? shim : null });
 
   console.log("\nDone.");
+  console.log(`- Sub-agent spending: ${spend === "included" ? "free and plan-included models only (OpenCode free models, Cursor Grok without -fast, Codex at standard speed)" : "any model, including ones billed at API prices"}. Change: switchboard policy spend included|any`);
+  if (spendNote) console.log(`- ${spendNote}`);
   if (shimNote) console.log(`- ${shimNote}`);
   const missingCli = want.filter((r) => !r.bin);
   for (const r of missingCli) console.log(`- ${r.label}: no CLI found, so other agents cannot delegate to it or check its login. Install: ${getAgent(r.agent).installHint}`);

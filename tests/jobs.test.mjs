@@ -4,6 +4,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import { sandbox, jobId } from "./helpers.mjs";
+import { classifyError, retryHint } from "../skills/switchboard/scripts/lib/agents/common.mjs";
 
 const AGENTS = ["claude", "codex", "cursor", "opencode"];
 
@@ -88,11 +89,14 @@ test("a child claude never inherits the parent session's bare-mode variables", (
 
 test("failed jobs report the agent's own error", () => {
   const s = sandbox();
-  for (const [agent, msg] of [["codex", /usage limit/], ["claude", /Not logged in/], ["cursor", /quota exceeded/], ["opencode", /Free usage limit reached \(fake\) \(retry in 83 min\)/]]) {
+  for (const [agent, msg, kind] of [["codex", /usage limit/, "rate-limit"], ["claude", /Not logged in/, "not-logged-in"], ["cursor", /quota exceeded/, "rate-limit"], ["opencode", /Free usage limit reached \(fake\) \(retry in 83 min\)/, "rate-limit; retry in 83 min"]]) {
     const r = s.run(["run", agent, "--wait", "--wait-timeout", "60", "SCENARIO:fail"]);
+    assert.match(r.stdout, new RegExp(`=failed \\(${kind.split(";")[0]}\\)`), `${agent}: ${r.stdout}`);
     const res = s.run(["result", jobId(r.stdout)]).stdout;
     assert.match(res, /FAILED/, `${agent}: ${res}`);
     assert.match(res, msg, `${agent}: ${res}`);
+    assert.ok(res.includes(`## Error (${kind})`), `${agent}: ${res}`);
+    assert.match(res, /\nNext: /, `${agent}: ${res}`);
   }
 });
 
@@ -232,4 +236,19 @@ test("resume restates the rules and re-checks the session's model against today'
   const no = s.run(["resume", id, "SCENARIO:ok again"]);
   assert.notEqual(no.status, 0);
   assert.match(no.stderr, /deny list/);
+});
+
+test("error kinds: the messages agents really print map to one label each", () => {
+  const cases = [
+    ["Credit balance is too low", "not-free"],
+    ["Free usage limit reached. Upgrade or retry in ~78 min", "rate-limit"],
+    ["You've hit your usage limit. Try again in 5 hours.", "rate-limit"],
+    ["Not logged in · Please run /login", "not-logged-in"],
+    ["'minimal' is not supported with the 'gpt-6-luna' model", "model-gone"],
+    ["Model gpt-9 not found", "model-gone"],
+    ["tests still fail after 3 attempts", "task-failed"],
+  ];
+  for (const [text, kind] of cases) assert.equal(classifyError(text), kind, text);
+  assert.equal(retryHint("You've hit your usage limit. Try again in 5 hours."), "Try again in 5 hours");
+  assert.equal(retryHint("no hint here"), null);
 });

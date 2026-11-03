@@ -56,7 +56,9 @@ npx -y github:boss6825/switchboard install
 
 ```
 Install Switchboard (https://github.com/boss6825/switchboard) for every coding agent on this
-machine. Run `npx -y github:boss6825/switchboard install`, then `switchboard doctor` (or
+machine. First ask me one question: may sub-agents use only free and plan-included models
+(recommended), or any model, including ones billed at API prices? Then run
+`npx -y github:boss6825/switchboard install --spend included` (or `--spend any`), then `switchboard doctor` (or
 `node ~/.switchboard/app/scripts/switchboard.mjs doctor` if that is not on PATH). Tell me which
 agents are ready. For any agent CLI that is missing or not logged in, give me the exact command
 to run myself; do not install or log in for me.
@@ -73,6 +75,8 @@ looks, using as few copies as possible:
 | OpenCode only | `~/.config/opencode/skills/switchboard` | |
 
 It also copies the tool to `~/.switchboard/app` and links `~/.local/bin/switchboard` to it.
+In a terminal it asks once which models sub-agents may use (see [Spending](#spending)); an agent
+running the install passes `--spend` instead, and with neither it picks free-only.
 Restart open agent sessions afterwards. `switchboard uninstall` removes only what it added.
 
 <details>
@@ -164,6 +168,26 @@ usage limits at the end: 5-hour window: 100% used (resets 2026-10-29 23:02 UTC)
 The receiving agent is told to treat the transcript as the other agent's claims, check the
 files and re-run the tests, and only then continue.
 
+## Spending
+
+One switch, chosen at install, decides whether sub-agents may cost money beyond your plans:
+
+| `spend` | Claude Code | Codex | Cursor | OpenCode |
+|---|---|---|---|---|
+| `included` (default) | no change (no free tier) | standard speed only: fast mode spends plan usage 1.5-2.5x faster | Grok models only, never `-fast`: other models bill at API price | models ending in `-free` only, read live from `opencode models` |
+| `any` | no change | its own default speed | any model on your plan | any model you have access to |
+
+```bash
+switchboard policy spend any                  # allow paid models for every agent
+switchboard policy set opencode spend any     # or just for one
+```
+
+The check runs inside Switchboard, so the lead agent spends no extra tokens or turns on it. It
+sees a single refusal line only when it asks for a model the setting rules out, and when no
+model is named Switchboard picks one that is allowed (for OpenCode, the first free model today).
+OpenCode's free list changes without notice, and `big-pickle` is not counted as free because
+its id does not say so.
+
 ## Model policy
 
 Each agent has its own rules for what it may run as a sub-agent. Set them once:
@@ -187,6 +211,7 @@ switchboard policy                                  # show it all
 | `allow` / `deny` | Model patterns (`*` wildcard). Deny wins. Claude ids also match their short form, so `opus*` blocks `claude-opus-5-5`. A bare family name such as `grok` allows every Grok, `-fast` ones included, unless you also deny them |
 | `efforts` | Efforts the lead agent may use |
 | `enabled` | `false`: never use this agent as a sub-agent |
+| `spend` | `included` or `any`, overriding the install-time [spending](#spending) choice for this agent |
 
 The policy lives in `~/.switchboard/config.json`. A job that can't get an allowed model does
 not start; there is no silent fallback. Some details that keep the rules honest:

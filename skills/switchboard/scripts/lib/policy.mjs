@@ -22,7 +22,11 @@ export function resolveModel(adapter, { requested = null, effort = null } = {}) 
   if (effort && pol.efforts.length && !pol.efforts.includes(effort))
     die(`effort "${effort}" is not allowed for ${label}; allowed: ${pol.efforts.join(", ")}`);
 
-  const want = requested || pol.model || null;
+  // spend=included: each adapter says which of its models cost nothing beyond
+  // the user's plan, and may pick one when no model was named.
+  const included = pol.spend === "included" ? adapter.included : null;
+  let want = requested || pol.model || null;
+  if (!want && included?.defaultModel) want = included.defaultModel(notes);
   const eff = effort || pol.effort || null;
   if (eff && adapter.efforts && !adapter.efforts.includes(eff))
     die(`${label} effort must be one of ${adapter.efforts.join(", ")} (got "${eff}")`);
@@ -35,14 +39,14 @@ export function resolveModel(adapter, { requested = null, effort = null } = {}) 
     // Still refuse an effort the agent's own default model does not offer.
     const def = eff && adapter.defaultModel?.();
     if (def) adapter.resolveModel(def, eff, { notes: [] });
-    return { id: null, effort: eff, notes, requested: null };
+    return { id: null, effort: eff, notes, requested: null, spend: pol.spend };
   }
 
   const r = adapter.resolveModel(want, eff, { notes });
   if ((adapter.opaqueModels || []).includes(r.id) && (pol.allow.length || pol.deny.length))
     die(`${label}'s "${r.id}" picks a model by itself, so it cannot be checked against the user's allow/deny list. Name a model instead.`);
   checkModelAllowed(adapter, r.id, want);
-  return { id: r.id, effort: r.effort ?? eff, notes, requested: want };
+  return { id: r.id, effort: r.effort ?? eff, notes, requested: want, spend: pol.spend };
 }
 
 // Also called after a job starts, with the model the agent actually reported:
@@ -52,6 +56,9 @@ export function resolveModel(adapter, { requested = null, effort = null } = {}) 
 export function checkModelAllowed(adapter, id, requested = null, { runtime = false } = {}) {
   const pol = policyFor(adapter.name);
   const names = [...new Set([runtime ? null : requested, ...(id ? adapter.matchNames(id) : [])].filter(Boolean))];
+  const why = id && pol.spend === "included" && adapter.included?.check?.(id);
+  if (why)
+    die(`${adapter.label} model "${id}" ${why}. The user allows only free or plan-included models (spend=included), so do not switch to a paid one; they can change this with: switchboard policy spend any`);
   const blocked = names.find((n) => matchesAny(n, pol.deny));
   if (blocked) die(`${adapter.label} model "${id || requested}" is blocked by the user's deny list (${pol.deny.join(", ")})`);
   if (!pol.allow.length) return;
@@ -70,6 +77,7 @@ export function describePolicy(adapter) {
   bits.push(`effort=${p.effort || "(default)"}`);
   bits.push(`orchestrator picks model: ${p.chooseModel ? "yes" : "no"}`);
   bits.push(`picks effort: ${p.chooseEffort ? "yes" : "no"}`);
+  bits.push(`spend=${p.spend}`);
   if (p.allow.length) bits.push(`allow=${p.allow.join(",")}`);
   if (p.deny.length) bits.push(`deny=${p.deny.join(",")}`);
   if (p.efforts.length) bits.push(`efforts=${p.efforts.join(",")}`);
