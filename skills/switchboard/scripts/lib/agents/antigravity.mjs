@@ -222,7 +222,7 @@ async function loadSteps(file) {
       const tool = toolRecord(name, str(call[3]?.[0]) || calls.get(id)?.args);
       const output = str(at(s, 140, 2, 1));
       const error = str(at(s, 31, 2));
-      if (output) tool.output = output;
+      if (output || error) tool.output = output || error;
       const exit = /exited with code (\d+)/.exec(output);
       if (exit) tool.exitCode = Number(exit[1]);
       tool.status = failed || error ? "failed" : "completed";

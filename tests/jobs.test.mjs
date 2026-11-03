@@ -6,7 +6,7 @@ import path from "node:path";
 import { sandbox, jobId } from "./helpers.mjs";
 import { classifyError, retryHint } from "../skills/switchboard/scripts/lib/agents/common.mjs";
 
-const AGENTS = ["claude", "codex", "cursor", "opencode"];
+const AGENTS = ["claude", "codex", "cursor", "opencode", "antigravity"];
 
 for (const agent of AGENTS) {
   test(`${agent}: write job records git-measured changes, commands, and the final answer`, () => {
@@ -89,7 +89,7 @@ test("a child claude never inherits the parent session's bare-mode variables", (
 
 test("failed jobs report the agent's own error", () => {
   const s = sandbox();
-  for (const [agent, msg, kind] of [["codex", /usage limit/, "rate-limit"], ["claude", /Not logged in/, "not-logged-in"], ["cursor", /quota exceeded/, "rate-limit"], ["opencode", /Free usage limit reached \(fake\) \(retry in 83 min\)/, "rate-limit; retry in 83 min"]]) {
+  for (const [agent, msg, kind] of [["codex", /usage limit/, "rate-limit"], ["claude", /Not logged in/, "not-logged-in"], ["cursor", /quota exceeded/, "rate-limit"], ["opencode", /Free usage limit reached \(fake\) \(retry in 83 min\)/, "rate-limit; retry in 83 min"], ["antigravity", /not recognized as a known model/, "model-gone"]]) {
     const r = s.run(["run", agent, "--wait", "--wait-timeout", "60", "SCENARIO:fail"]);
     assert.match(r.stdout, new RegExp(`=failed \\(${kind.split(";")[0]}\\)`), `${agent}: ${r.stdout}`);
     const res = s.run(["result", jobId(r.stdout)]).stdout;
@@ -199,13 +199,14 @@ test("a crashed supervisor leaves a live agent that cancel still stops", async (
 
 test("each sub-agent gets only its own vendor's keys (OpenCode keeps provider keys)", () => {
   const s = sandbox();
-  const env = { ANTHROPIC_API_KEY: "a", OPENAI_API_KEY: "o", CURSOR_API_KEY: "c", CLAUDE_CODE_OAUTH_TOKEN: "t" };
-  for (const agent of ["claude", "codex", "cursor", "opencode"]) s.run(["run", agent, "--mode", "ask", "--wait", "--wait-timeout", "60", "SCENARIO:ok"], { env });
+  const env = { ANTHROPIC_API_KEY: "a", OPENAI_API_KEY: "o", CURSOR_API_KEY: "c", CLAUDE_CODE_OAUTH_TOKEN: "t", GEMINI_API_KEY: "g" };
+  for (const agent of ["claude", "codex", "cursor", "opencode", "antigravity"]) s.run(["run", agent, "--mode", "ask", "--wait", "--wait-timeout", "60", "SCENARIO:ok"], { env });
   const seen = (agent) => s.lastRun(agent).keys.filter((k) => k in env); // ignore unrelated keys from this machine
   assert.deepEqual(seen("claude"), ["ANTHROPIC_API_KEY", "CLAUDE_CODE_OAUTH_TOKEN"]);
   assert.deepEqual(seen("codex"), ["OPENAI_API_KEY"]);
   assert.deepEqual(seen("cursor"), ["CURSOR_API_KEY"]);
-  assert.deepEqual(seen("opencode"), ["ANTHROPIC_API_KEY", "OPENAI_API_KEY"]);
+  assert.deepEqual(seen("opencode"), ["ANTHROPIC_API_KEY", "GEMINI_API_KEY", "OPENAI_API_KEY"]);
+  assert.deepEqual(seen("antigravity"), ["GEMINI_API_KEY"]);
 });
 
 test("read-only Claude has no shell; Codex write mode pins network off", () => {
