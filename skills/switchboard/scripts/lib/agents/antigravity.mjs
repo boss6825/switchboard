@@ -381,7 +381,7 @@ const adapter = {
     if (/authenticat|sign.?in|log.?in|credential/i.test(text)) return { ok: false, detail: oneLine(text.trim(), 160) };
     return { ok: null, detail: oneLine(text.trim(), 160) || "could not tell" };
   },
-  takeover: (id) => `agy --conversation ${id}   (run it in the chat's folder)`,
+  takeover: (id) => `agy --conversation ${id}`,
 
   listModels: ({ refresh = false } = {}) => fetchModels({ refresh }),
   resolveModel,
