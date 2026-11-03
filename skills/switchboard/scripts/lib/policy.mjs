@@ -25,6 +25,10 @@ export function resolveModel(adapter, { requested = null, effort = null } = {}) 
   // spend=included: each adapter says which of its models cost nothing beyond
   // the user's plan, and may pick one when no model was named.
   const included = pol.spend === "included" ? adapter.included : null;
+  // Some agents can bill whatever the model (an API key instead of the plan).
+  const billed = included?.preflight?.();
+  if (billed)
+    die(`${label} ${billed}. The user allows only free or plan-included models (spend=included), so do not work around this; they can change it with: switchboard policy spend any`);
   let want = requested || pol.model || null;
   if (!want && included?.defaultModel) want = included.defaultModel(notes);
   const eff = effort || pol.effort || null;

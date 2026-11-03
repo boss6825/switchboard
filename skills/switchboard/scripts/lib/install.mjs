@@ -19,11 +19,14 @@ const MARKER = ".switchboard-install.json";
 export function skillDirs(name) {
   const codexHome = process.env.CODEX_HOME || home(".codex");
   const opencodeCfg = path.join(process.env.XDG_CONFIG_HOME || home(".config"), "opencode");
+  const gemini = process.env.SWITCHBOARD_ANTIGRAVITY_HOME || home(".gemini");
   return {
     claude: [path.join(process.env.CLAUDE_CONFIG_DIR || home(".claude"), "skills")],
     codex: [home(".agents", "skills"), path.join(codexHome, "skills")],
     cursor: [home(".cursor", "skills"), home(".agents", "skills"), home(".claude", "skills"), path.join(codexHome, "skills")],
     opencode: [path.join(opencodeCfg, "skills"), home(".claude", "skills"), home(".agents", "skills")],
+    // agy 1.4.12 searches both (seen in its run configuration); the first is its own.
+    antigravity: [path.join(gemini, "antigravity-cli", "skills"), path.join(gemini, "skills")],
   }[name];
 }
 
@@ -32,6 +35,7 @@ const CONFIG_DIRS = {
   codex: () => process.env.CODEX_HOME || home(".codex"),
   cursor: () => home(".cursor"),
   opencode: () => path.join(process.env.XDG_DATA_HOME || home(".local", "share"), "opencode"),
+  antigravity: () => path.join(process.env.SWITCHBOARD_ANTIGRAVITY_HOME || home(".gemini"), "antigravity-cli"),
 };
 
 function skillSource() {

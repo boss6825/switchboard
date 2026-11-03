@@ -91,8 +91,9 @@ const VENDOR_KEYS = {
   codex: /^(OPENAI_API_KEY|CODEX_API_KEY)$/,
   cursor: /^CURSOR_API_KEY$/,
   opencode: /^OPENCODE_API_KEY$/,
+  antigravity: /^GEMINI_API_KEY$/,
 };
-const PROVIDER_KEYS = /^(ANTHROPIC_API_KEY|OPENAI_API_KEY)$/;
+const PROVIDER_KEYS = /^(ANTHROPIC_API_KEY|OPENAI_API_KEY|GEMINI_API_KEY)$/;
 
 export function childEnv(extra = {}, forAgent = null) {
   const env = { ...process.env };

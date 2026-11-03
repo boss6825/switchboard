@@ -1,8 +1,8 @@
 #!/usr/bin/env node
-// Stand-in for the claude, codex, cursor-agent and opencode CLIs in offline
-// tests. FAKE_KIND picks which one it imitates; it emits the event shapes each
-// real CLI produced in October 2026 (captured from live runs; OpenCode's from
-// its source). A SCENARIO:<name> token in the prompt picks the behaviour.
+// Stand-in for the claude, codex, cursor-agent, opencode and agy CLIs in
+// offline tests. FAKE_KIND picks which one it imitates; it emits the event
+// shapes each real CLI produced in October 2026 (captured from live runs;
+// OpenCode's from its source; agy's from live runs of 1.4.12 in November). A SCENARIO:<name> token in the prompt picks the behaviour.
 import fs from "node:fs";
 import path from "node:path";
 
@@ -18,7 +18,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const ocVersion = process.env.FAKE_OPENCODE_VERSION || "2.2.1";
 const ocNew = Number(ocVersion.split(".")[0]) >= 2;
 if (args[0] === "--version") {
-  console.log({ claude: "9.9.9 (Claude Code)", codex: "codex-cli 9.9.9", cursor: "2099.01.01-fake", opencode: ocNew ? `opencode v${ocVersion}` : ocVersion }[kind]);
+  console.log({ claude: "9.9.9 (Claude Code)", codex: "codex-cli 9.9.9", cursor: "2099.01.01-fake", opencode: ocNew ? `opencode v${ocVersion}` : ocVersion, antigravity: "9.9.9" }[kind]);
   process.exit(0);
 }
 if (kind === "opencode" && args[0] === "run") {
@@ -55,9 +55,15 @@ if (kind === "opencode" && args[0] === "auth") {
   process.exit(0);
 }
 
+if (kind === "antigravity" && args[0] === "models") {
+  console.log("Fetching available models...");
+  console.log(["gemini-3.8-flash-high\tGemini 3.8 Flash (High)", "gemini-3.8-flash-medium\tGemini 3.8 Flash (Medium)", "gemini-3.8-flash-low\tGemini 3.8 Flash (Low)", "gemini-3.7-flash-medium\tGemini 3.7 Flash (Medium)", "claude-sonnet-4-6\tClaude Sonnet 4.6 (Thinking)"].join("\n"));
+  process.exit(0);
+}
+
 // ---- a run
 const stdin = process.stdin.isTTY ? "" : fs.readFileSync(0, "utf8");
-const prompt = stdin || args[args.length - 1] || "";
+const prompt = (kind === "antigravity" ? args[args.indexOf("-p") + 1] : null) || stdin || args[args.length - 1] || "";
 const scenario = (prompt.match(/SCENARIO:(\w+)/) || [])[1] || "ok";
 const cwd = process.cwd();
 const file = path.join(cwd, "fake-output.txt");
@@ -155,6 +161,42 @@ if (kind === "opencode") {
   }
   ev("text", { part: { type: "text", text: `Done (${scenario}).\n\nREPORT\n- ok` } });
   ev("step_finish", { part: { type: "step-finish", reason: "stop", tokens: { input: 5, output: 6, reasoning: 0 }, cost: 0 } });
+  process.exit(0);
+}
+
+if (kind === "antigravity") {
+  const cid = sid;
+  const step = (o) => out({ event: "step_update", step_update: { conversation_id: cid, ...o } });
+  const usage = { input_tokens: 10, output_tokens: 5, thinking_tokens: 0, cache_read_tokens: 0, total_tokens: 15 };
+  const result = (o) => out({ event: "result", result: { conversation_id: cid, num_turns: 1, duration_seconds: 1.5, usage, ...o } });
+  if (scenario === "fail") {
+    // What agy 1.4.12 printed when its model list could not be fetched.
+    const error = `invalid model selection (--model "${flag("--model") || ""}" --effort ""): model ${flag("--model") || "x"} is not recognized as a known model or custom model in settings`;
+    result({ conversation_id: "", status: "ERROR", response: "", error, num_turns: 0, finished_reason: "error" });
+    process.stderr.write(`error: ${error}\n`);
+    process.exit(1);
+  }
+  out({ event: "init", conversation_id: cid, init: { cwd, tools: ["run_command", "edit_file", "read_file"], permission_mode: JSON.parse(flag("--settings") || "{}").toolPermission || "request-review", ...(flag("--model") ? { model: flag("--model") } : {}) } });
+  step({ step_index: 0, state: "DONE", step_type: "user_input" });
+  step({ step_index: 1, state: "DONE", step_type: "agent_response", text_delta: "I'll look first.\n", usage });
+  await slowPart();
+  const tool = (i, name, parameters, end) => {
+    step({ step_index: i, state: "ACTIVE", step_type: "tool", tool_name: name, tool_info: { name, parameters } });
+    step({ step_index: i, state: end.error ? "ERROR" : "DONE", step_type: "tool", tool_name: name, duration_seconds: 0.1, tool_info: { name, parameters, ...end } });
+  };
+  tool(2, "run_command", { CommandLine: "ls" }, { output: "Command exited with code 0.\n\na.txt" });
+  if (scenario === "edit") {
+    fs.writeFileSync(file, "hello from fake agy\n");
+    tool(3, "write_to_file", { TargetFile: file }, { output: "Created file" });
+  }
+  if (scenario === "denied") {
+    tool(3, "run_command", { CommandLine: "curl example.invalid" }, { error: { type: "TOOL_ERROR", message: 'permission check failed for unsandboxed "curl example.invalid": user denied permission to run command' } });
+    result({ status: "SUCCESS", response: "", denied_actions: [{ action: "command", display_name: "RunCommand" }] });
+    process.exit(0);
+  }
+  step({ step_index: 4, state: "ACTIVE", step_type: "agent_response", text_delta: `Done (${scenario}).` });
+  step({ step_index: 4, state: "DONE", step_type: "agent_response", text_delta: "\n\nREPORT\n- ok\n", usage });
+  result({ status: "SUCCESS", response: `Done (${scenario}).\n\nREPORT\n- ok\n` });
   process.exit(0);
 }
 

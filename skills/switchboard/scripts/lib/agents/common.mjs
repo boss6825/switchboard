@@ -26,10 +26,10 @@ const KINDS = [
 // reading the message: wait, log in, pick another model, or rework the task.
 // Order matters: "Free usage limit reached" is a rate limit, not a paid-model refusal.
 const ERROR_KINDS = [
-  ["not-logged-in", /not logged in|please (run )?\/?login|unauthori[sz]ed|\b401\b|authentication[_ ]failed|no credentials|invalid api key/i],
+  ["not-logged-in", /not logged in|please (run )?\/?login|unauthori[sz]ed|\b401\b|authentication[_ ]failed|no credentials|invalid api key|authentication required/i],
   ["not-free", /credit balance|insufficient (credits|funds|balance|quota)|payment required|\b402\b|upgrade (your )?plan|requires a paid|not included in your plan/i],
   ["rate-limit", /usage limit|rate.?limit|\b429\b|too many requests|free.limit|quota exceeded|try again (in|at|later)/i],
-  ["model-gone", /model.{0,60}(not found|not supported|does not exist|unavailable|retired|deprecated)|unknown model|not a valid model|is not supported with the/i],
+  ["model-gone", /model.{0,60}(not found|not supported|does not exist|unavailable|retired|deprecated)|unknown model|not a valid model|not recognized as a known model|is not supported with the/i],
 ];
 
 export function classifyError(text = "") {

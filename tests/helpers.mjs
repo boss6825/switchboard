@@ -33,11 +33,27 @@ export const IDS = {
   cursorEditor: "22222222-bbbb-4bbb-8bbb-000000000002",
   cursorOld: "22222222-bbbb-4bbb-8bbb-000000000003",
   opencode: "ses_fake000000000001",
+  antigravity: "33333333-cccc-4ccc-8ccc-000000000001",
 };
+
+// Protocol buffers, enough to write Antigravity's step blobs: fields are
+// [number, value] pairs; a value is an int, a string, or a nested field list.
+const varint = (n) => {
+  const out = [];
+  while (n > 127) out.push((n % 128) | 128), (n = Math.floor(n / 128));
+  out.push(n);
+  return Buffer.from(out);
+};
+export const pbEncode = (fields) =>
+  Buffer.concat(fields.map(([f, v]) => {
+    if (typeof v === "number") return Buffer.concat([varint(f * 8), varint(v)]);
+    const body = Array.isArray(v) ? pbEncode(v) : Buffer.from(String(v));
+    return Buffer.concat([varint(f * 8 + 2), varint(body.length), body]);
+  }));
 
 // spend: the install-time choice to preseed ("any" so the fakes' paid-looking models run);
 // null leaves ~/.switchboard empty, as on a fresh machine.
-export function sandbox({ agents = ["claude", "codex", "cursor", "opencode"], spend = "any" } = {}) {
+export function sandbox({ agents = ["claude", "codex", "cursor", "opencode", "antigravity"], spend = "any" } = {}) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "switchboard-test-"));
   const home = path.join(root, "home");
   const repo = path.join(home, "work", "proj");
@@ -54,7 +70,7 @@ export function sandbox({ agents = ["claude", "codex", "cursor", "opencode"], sp
   if (g("commit", "-qm", "init").status !== 0) throw new Error("fixture commit failed");
 
   for (const k of agents) {
-    const name = { claude: "claude", codex: "codex", cursor: "cursor-agent", opencode: "opencode" }[k];
+    const name = { claude: "claude", codex: "codex", cursor: "cursor-agent", opencode: "opencode", antigravity: "agy" }[k];
     w(path.join(bin, name), `#!/bin/sh\nFAKE_KIND=${k} exec "${process.execPath}" "${FAKE}" "$@"\n`);
     fs.chmodSync(path.join(bin, name), 0o755);
   }
@@ -143,11 +159,35 @@ export function sandbox({ agents = ["claude", "codex", "cursor", "opencode"], sp
     db.close();
   }
 
+  // Antigravity: one CLI conversation (a database per conversation, steps as
+  // protobuf, field numbers as agy 1.4.12 writes them) and the summary index.
+  const agDir = path.join(home, ".gemini", "antigravity-cli");
+  if (sqlite) {
+    fs.mkdirSync(path.join(agDir, "conversations"), { recursive: true });
+    const sec = (m) => [[1, [[1, Math.floor((t0 + m * 60000) / 1000)]]]];
+    const steps = [
+      [[1, 14], [4, 3], [5, sec(30)], [19, [[2, "Add retries to the upload client"]]]],
+      [[1, 15], [4, 3], [5, sec(31)], [20, [[1, "Reading the client first."], [7, [[1, "call_1"], [2, "run_command"], [3, JSON.stringify({ CommandLine: "npm test" })]]]]]],
+      [[1, 132], [4, 7], [5, [...sec(31), [4, [[1, "call_1"], [2, "run_command"], [3, JSON.stringify({ CommandLine: "npm test" })]]]]], [31, [[2, "permission check failed for unsandboxed \"npm test\""]]]],
+      [[1, 132], [4, 3], [5, [...sec(32), [4, [[1, "call_2"], [2, "edit_file"], [3, JSON.stringify({ Path: path.join(repo, "upload.ts") })]]]]], [140, [[2, [[1, "Made 1 replacement"]]]]]],
+      [[1, 15], [4, 3], [5, sec(33)], [20, [[1, "Retries added; tests could not run in the sandbox."]]]],
+    ];
+    const db = new sqlite.DatabaseSync(path.join(agDir, "conversations", `${IDS.antigravity}.db`));
+    db.exec("CREATE TABLE steps (idx integer PRIMARY KEY, step_type integer NOT NULL DEFAULT 0, status integer NOT NULL DEFAULT 0, step_payload blob)");
+    steps.forEach((st, i) => db.prepare("INSERT INTO steps VALUES (?, ?, ?, ?)").run(i, st[0][1], st[1][1], pbEncode(st)));
+    db.close();
+    const idx = new sqlite.DatabaseSync(path.join(agDir, "conversation_summaries.db"));
+    idx.exec("CREATE TABLE conversation_summaries (conversation_id text PRIMARY KEY, title text, preview text, step_count integer, last_modified_time datetime, workspace_uris text, status text, source text, parent_conversation_id text NOT NULL DEFAULT '')");
+    idx.prepare("INSERT INTO conversation_summaries VALUES (?, 'Upload client retries', 'Upload client retries', 5, ?, ?, 'CASCADE_RUN_STATUS_IDLE', '', '')").run(IDS.antigravity, new Date(t0 + 33 * 60000).toISOString().replace("T", " ").replace("Z", "+00:00"), JSON.stringify([`file://${repo}`]));
+    idx.prepare("INSERT INTO conversation_summaries VALUES ('33333333-cccc-4ccc-8ccc-0000000000ff', 'A subagent run', '', 1, ?, '[]', '', '', ?)").run(new Date(t0).toISOString(), IDS.antigravity);
+    idx.close();
+  }
+
   if (spend) w(path.join(home, ".switchboard", "config.json"), JSON.stringify({ agents: {}, spend }));
 
   const argsLog = path.join(root, "args.log");
   const env = {
-    ...Object.fromEntries(Object.entries(process.env).filter(([k]) => !/^(CLAUDE|CODEX|CURSOR|OPENCODE|SWITCHBOARD|ANTHROPIC)/.test(k))),
+    ...Object.fromEntries(Object.entries(process.env).filter(([k]) => !/^(CLAUDE|CODEX|CURSOR|OPENCODE|SWITCHBOARD|ANTHROPIC|AGY_|GEMINI)/.test(k))),
     // Only the fakes, node, and system tools: real agent CLIs on this machine must not leak in.
     PATH: [bin, path.dirname(process.execPath), "/usr/bin", "/bin", "/usr/sbin", "/sbin"].join(path.delimiter),
     SWITCHBOARD_STRICT_PATH: "1",
@@ -167,4 +207,4 @@ export function sandbox({ agents = ["claude", "codex", "cursor", "opencode"], sp
   return { root, home, repo, bin, env, run, g, calls, lastRun };
 }
 
-export const jobId = (s) => (s.match(/\b(cl|cx|cu|oc)-\d{4}-[0-9a-f]{6}\b/) || [])[0];
+export const jobId = (s) => (s.match(/\b(cl|cx|cu|oc|ag)-\d{4}-[0-9a-f]{6}\b/) || [])[0];
