@@ -2,7 +2,7 @@
 
 **Your coding agents, working as one team.**
 
-Switchboard lets Claude Code, Codex, Cursor and OpenCode on the same machine read each
+Switchboard lets Claude Code, Codex, Cursor, OpenCode and Antigravity on the same machine read each
 other's chats and use each other as sub-agents. It is one small command-line tool plus a skill
 that every agent loads. No server, no account, no dependencies: it uses the agents' own
 CLIs and the chat files they already keep on your disk.
@@ -16,7 +16,8 @@ Two things it does:
    one app into another, and no lost tool history.
 2. **Run your agents like a dev team.** Your main agent is the senior engineer: it plans,
    decides, and reviews. It hands small, well-defined tickets to junior developers: Cursor
-   running Grok, OpenCode on a free model, or a cheaper Claude model. They work in the
+   running Grok, OpenCode on a free model, Antigravity on your Google plan, or a cheaper Claude
+   model. They work in the
    background. The senior checks their work before anything ships. The expensive model's quota
    goes to the hard parts, and you get to use the quota you already have on every other tool.
 
@@ -44,7 +45,8 @@ else before the job starts.
 
 You need Node.js 18 or later and at least one of: [Claude Code](https://claude.com/claude-code),
 [Codex](https://developers.openai.com/codex/cli), [Cursor CLI](https://cursor.com/docs/cli),
-[OpenCode](https://opencode.ai). macOS and Linux. Windows is untested.
+[OpenCode](https://opencode.ai), [Antigravity CLI](https://antigravity.google/product/antigravity-cli)
+(`agy`). macOS and Linux. Windows is untested.
 
 **From a terminal:**
 
@@ -73,6 +75,7 @@ looks, using as few copies as possible:
 | Codex | `~/.agents/skills/switchboard` | Cursor, OpenCode |
 | Cursor only | `~/.cursor/skills/switchboard` | |
 | OpenCode only | `~/.config/opencode/skills/switchboard` | |
+| Antigravity | `~/.gemini/antigravity-cli/skills/switchboard` | |
 
 It also copies the tool to `~/.switchboard/app` and links `~/.local/bin/switchboard` to it.
 In a terminal it asks once which models sub-agents may use (see [Spending](#spending)); an agent
@@ -172,10 +175,10 @@ files and re-run the tests, and only then continue.
 
 One switch, chosen at install, decides whether sub-agents may cost money beyond your plans:
 
-| `spend` | Claude Code | Codex | Cursor | OpenCode |
-|---|---|---|---|---|
-| `included` (default) | no change (no free tier) | standard speed only: fast mode spends plan usage 1.5-2.5x faster | Grok models only, never `-fast`: other models bill at API price | models ending in `-free` only, read live from `opencode models` |
-| `any` | no change | its own default speed | any model on your plan | any model you have access to |
+| `spend` | Claude Code | Codex | Cursor | OpenCode | Antigravity |
+|---|---|---|---|---|---|
+| `included` (default) | no change (no free tier) | standard speed only: fast mode spends plan usage 1.5-2.5x faster | Grok models only, never `-fast`: other models bill at API price | models ending in `-free` only, read live from `opencode models` | any model on your plan, but AI credits are switched off for the run (`useG1Credits=false`), so an exhausted quota stops the job instead of spending credits. A Gemini API key or Google Cloud sign-in bills per use, so the job is refused |
+| `any` | no change | its own default speed | any model on your plan | any model you have access to | your own credit setting applies |
 
 ```bash
 switchboard policy spend any                  # allow paid models for every agent
@@ -237,7 +240,7 @@ lead agent ─▶ switchboard wait | result | resume | cancel
 ```
 
 - Each job is the agent's own headless mode: `claude -p`, `codex exec`, `cursor-agent -p`,
-  `opencode run`. A small detached supervisor owns it, so the job keeps running if the lead
+  `opencode run`, `agy -p`. A small detached supervisor owns it, so the job keeps running if the lead
   agent's tool call times out.
 - **Changed files are measured with git**, not taken from the agent's report. Files that were
   already dirty aren't blamed on the job; changes made during a read-only job, or while another
@@ -257,6 +260,7 @@ lead agent ─▶ switchboard wait | result | resume | cancel
 | Codex | `~/.codex/sessions/YYYY/MM/DD/rollout-*.jsonl`, archived ones zstd-compressed | Same files for the desktop app, CLI, IDE extension, and `codex exec`. Codex can also import Claude Code and Cursor chats itself |
 | Cursor | `~/.cursor/projects/<folder>/agent-transcripts/<id>/<id>.jsonl` | Same files for the CLI and the editor. Tool results are not recorded, so exit codes are unknown. Older editor chats live in the editor's database; newer Cursor builds encrypt many of them, and Switchboard says so instead of guessing |
 | OpenCode | `~/.local/share/opencode/opencode.db` | Read through `opencode export`; falls back to the database |
+| Antigravity | `~/.gemini/antigravity-cli/conversations/<id>.db`, indexed by `conversation_summaries.db` | One SQLite file per conversation with steps stored as protobuf. `agy` has no export command, so Switchboard decodes the messages, tool calls, outputs and errors itself (field layout of agy 1.4.12; a new release may change it, and the chat then says so). The Antigravity app's `~/.gemini/antigravity/` is read the same way. Subagent runs are hidden |
 
 Everything is read-only. Switchboard never edits or deletes another agent's chats.
 
@@ -265,6 +269,12 @@ Everything is read-only. Switchboard never edits or deletes another agent's chat
 - **Write jobs run without permission prompts**, because nobody is there to approve them:
   Cursor with `--force`, Claude Code with `--dangerously-skip-permissions`, OpenCode with
   `--auto`. Codex runs in its own OS sandbox (`workspace-write`, network access pinned off).
+  Antigravity runs commands in its OS sandbox too (workspace only, no network), accepts
+  workspace edits, and denies writes to `<workdir>/.git`; it never gets
+  `--dangerously-skip-permissions`. These rules are passed per run with `agy --settings` and
+  added to your own `permissions`, never replacing them. A command that needs to leave the
+  sandbox is denied (nobody can approve it), and the job then fails saying which permission
+  it needed.
   Read-only jobs (`--mode ask`, `review`) use each agent's read-only mode; for Claude that also
   means no shell.
 - Sub-agents are told not to commit, push, switch branches, install global packages, or edit
@@ -275,15 +285,15 @@ Everything is read-only. Switchboard never edits or deletes another agent's chat
   as data, not as instructions.
 - Each agent runs under its own login and its own provider's terms. A sub-agent's environment
   never contains another vendor's keys (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `CURSOR_API_KEY`,
-  `CLAUDE_CODE_OAUTH_TOKEN`, ...), so a command it runs can't print them into its transcript.
-  OpenCode keeps the provider API keys, because it uses them to reach those providers.
+  `CLAUDE_CODE_OAUTH_TOKEN`, `GEMINI_API_KEY`, ...), so a command it runs can't print them into
+  its transcript. OpenCode keeps the provider API keys, because it uses them to reach those providers.
 - One write job per repository at a time (use `--worktree` for parallel writers). If a job's
   supervisor dies, the job shows as `lost` while its agent keeps running, still holds the lock,
   and `cancel` stops it.
 
 ## Tested with
 
-Offline: `node --test tests/` (fake CLIs for all four agents and synthetic chats in each format; no network, logins, or model usage).
+Offline: `node --test tests/` (fake CLIs for all five agents and synthetic chats in each format; no network, logins, or model usage).
 
 Live, on macOS with Node 26.8, October 2026:
 
@@ -291,6 +301,11 @@ Live, on macOS with Node 26.8, October 2026:
 |---|---|---|---|---|
 | Read real chats (list, search, show, handoff) | yes (210 chats) | yes (134 + archived) | yes (142 transcripts + editor database) | not tested: not installed on the test machine |
 | Delegated job | started and authenticated; the test account had no API credit left, and the job failed with Claude's own error | write job + resume, result verified by re-running the tests | read-only job on `grok-4.7-low` | not tested |
+
+Antigravity, live with agy 1.4.12 on 2026-11-04: real CLI chats read (list, show, search);
+a read-only job, a write job (edit plus a sandboxed command), and a resume, each on the
+plan's default model at low effort. Chats from the Antigravity app were not tested (none on
+the test machine).
 
 OpenCode support is built from OpenCode's documentation and source (its `run --format json`
 events and both database schemas) and covered by offline tests only. Reports from OpenCode

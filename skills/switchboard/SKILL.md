@@ -1,6 +1,6 @@
 ---
 name: switchboard
-description: Work with the other coding agents on this machine (Claude Code, Codex, Cursor, OpenCode). Use it to find, read, and continue a chat another agent had, for example when the user hit one agent's usage limit and wants you to pick up where it stopped, or says "see what Codex did" or "continue my Cursor chat"; to search past chats across agents; and to hand bounded tasks, second opinions, or adversarial reviews to another agent's CLI as a background sub-agent, within the user's model policy, so the expensive main agent saves its own usage.
+description: Work with the other coding agents on this machine (Claude Code, Codex, Cursor, OpenCode, Antigravity). Use it to find, read, and continue a chat another agent had, for example when the user hit one agent's usage limit and wants you to pick up where it stopped, or says "see what Codex did" or "continue my Cursor chat"; to search past chats across agents; and to hand bounded tasks, second opinions, or adversarial reviews to another agent's CLI as a background sub-agent, within the user's model policy, so the expensive main agent saves its own usage.
 ---
 
 # Switchboard

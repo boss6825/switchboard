@@ -8,6 +8,7 @@
 | Codex | `~/.codex/sessions/YYYY/MM/DD/rollout-*.jsonl` | Desktop app, CLI, IDE and `codex exec` all write here. `--archived` adds archived threads. Records the 5-hour and weekly usage windows |
 | Cursor | `~/.cursor/projects/<folder>/agent-transcripts/<id>/` | CLI and editor both write here. No tool results are recorded, so exit codes are unknown. Older editor chats come from Cursor's database and are often encrypted (the tool says so) |
 | OpenCode | `~/.local/share/opencode/opencode.db` | Read through `opencode export` when the CLI is installed |
+| Antigravity | `~/.gemini/antigravity-cli/conversations/<id>.db` | Decoded by Switchboard (no export command); messages, tool calls, outputs and errors. The app's chats under `~/.gemini/antigravity/` too |
 
 ## Commands
 

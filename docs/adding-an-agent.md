@@ -5,8 +5,9 @@ Every agent is one module in `skills/switchboard/scripts/lib/agents/`, registere
 works on the interface below and never special-cases an agent.
 
 Start from the closest existing adapter: `codex.mjs` (JSONL transcripts, stdin prompt),
-`cursor.mjs` (JSONL transcripts plus a SQLite store, prompt as an argument), or `opencode.mjs`
-(SQLite, reads through the agent's own export command).
+`cursor.mjs` (JSONL transcripts plus a SQLite store, prompt as an argument), `opencode.mjs`
+(SQLite, reads through the agent's own export command), or `antigravity.mjs` (one SQLite file
+per chat with protobuf steps, decoded without a schema; run rules passed per run as settings).
 
 ## The interface
 
@@ -32,6 +33,11 @@ export default {
   resolveModel(want, effort, { notes }),  // -> { id, effort }; handle "<family>:latest"; die() on unknown ids
   matchNames(id),              // names a policy pattern may match (e.g. short forms)
   isLatestOf(pattern, id),     // for allow entries like "flash:latest"
+  included: {                  // what spend=included allows (optional; no entry = no limit)
+    check(id),                 //   a reason string if this model costs extra, else null
+    defaultModel(notes),       //   optional: the model to run when none is named
+    preflight(),               //   optional: a reason string if any run would bill (e.g. an API key login)
+  },
 
   buildRun(job, prompt),       // -> { bin, args, stdin } for one headless run
   parser(ctx),                 // -> (event) => void, translating the agent's event stream
@@ -80,6 +86,11 @@ the top of `agents/common.mjs`. Never write to the agent's files.
 Add your agent to `tests/fakes/fake-agent.mjs` (the event stream your parser expects, captured
 from a real run) and a synthetic chat to `tests/helpers.mjs`. The job tests loop over every
 agent automatically. Never commit real transcripts.
+
+## Credentials
+
+If the agent reads its own API key from the environment, add it to `VENDOR_KEYS` in
+`lib/util.mjs` so other vendors' sub-agents never receive it.
 
 ## Skill folders
 

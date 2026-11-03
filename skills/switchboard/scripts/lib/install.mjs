@@ -172,7 +172,8 @@ function askSpend() {
   process.stdout.write(
     "\nWhich models may sub-agents use?\n" +
       "  1) Free and plan-included only (recommended): OpenCode's free models, Cursor's Grok models\n" +
-      "     without -fast, Codex at standard speed. Nothing is billed beyond your plans.\n" +
+      "     without -fast, Codex at standard speed, Antigravity on plan quota (never AI credits).\n" +
+      "     Nothing is billed beyond your plans.\n" +
       "  2) Any model, including ones billed at API prices (for example non-Grok models in Cursor).\n" +
       "Choose 1 or 2 [1]: ",
   );
@@ -240,7 +241,7 @@ export function cmdInstall(argv) {
   writeJSON(path.join(SB_HOME, "install.json"), { version: VERSION, at: new Date().toISOString(), targets: [...targets.keys()].map((d) => path.join(d, SKILL)), shim: linkShim ? shim : null });
 
   console.log("\nDone.");
-  console.log(`- Sub-agent spending: ${spend === "included" ? "free and plan-included models only (OpenCode free models, Cursor Grok without -fast, Codex at standard speed)" : "any model, including ones billed at API prices"}. Change: switchboard policy spend included|any`);
+  console.log(`- Sub-agent spending: ${spend === "included" ? "free and plan-included models only (OpenCode free models, Cursor Grok without -fast, Codex at standard speed, Antigravity without AI credits)" : "any model, including ones billed at API prices"}. Change: switchboard policy spend included|any`);
   if (spendNote) console.log(`- ${spendNote}`);
   if (shimNote) console.log(`- ${shimNote}`);
   const missingCli = want.filter((r) => !r.bin);

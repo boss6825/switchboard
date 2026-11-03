@@ -29,6 +29,8 @@ Ask `sb policy` and `sb doctor` once per session. Typical roles:
 - **Cursor** (often locked by the user to its newest Grok): bulk mechanical work, tests,
   reviews, exploration.
 - **OpenCode**: free or cheap models for docs, boilerplate, simple edits.
+- **Antigravity**: Gemini models on the user's Google plan quota; sandboxed commands with no
+  network, so give it work that needs no installs or downloads.
 - **Codex**: strong at multi-file changes; runs in its own OS sandbox (no network in write mode).
 - **Claude Code**: careful edits and reviews; defaults to Sonnet as a sub-agent.
 An agent with `enabled=false` is off limits. A locked model is the user's decision.
@@ -60,7 +62,8 @@ BRIEF
 
 - `--mode write` (default) may edit files and run commands without asking: Cursor runs with
   `--force`, Claude Code without permission prompts, OpenCode with `--auto`, Codex inside its
-  workspace-write sandbox. `--mode ask` is read-only for every agent.
+  workspace-write sandbox, Antigravity with commands in its OS sandbox (no network, no `.git`
+  writes). `--mode ask` is read-only for every agent.
 - **Effort**: pick the lowest likely to succeed. `low` trivial and mechanical; `medium` routine
   bounded edits; `high` multi-file changes or a focused investigation; `xhigh` tricky debugging,
   reviews, subtle changes. A failed cheap run that needs a rerun costs more than one right-sized run.
