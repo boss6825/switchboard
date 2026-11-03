@@ -144,7 +144,8 @@ export function sandbox({ agents = ["claude", "codex", "cursor", "opencode"] } =
   const argsLog = path.join(root, "args.log");
   const env = {
     ...Object.fromEntries(Object.entries(process.env).filter(([k]) => !/^(CLAUDE|CODEX|CURSOR|OPENCODE|SWITCHBOARD|ANTHROPIC)/.test(k))),
-    PATH: `${bin}${path.delimiter}${process.env.PATH}`,
+    // Only the fakes, node, and system tools: real agent CLIs on this machine must not leak in.
+    PATH: [bin, path.dirname(process.execPath), "/usr/bin", "/bin", "/usr/sbin", "/sbin"].join(path.delimiter),
     SWITCHBOARD_STRICT_PATH: "1",
     SWITCHBOARD_USER_HOME: home,
     SWITCHBOARD_HOME: path.join(home, ".switchboard"),

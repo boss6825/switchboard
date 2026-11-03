@@ -14,9 +14,19 @@ const out = (o) => process.stdout.write(JSON.stringify(o) + "\n");
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 // ---- side commands
+// OpenCode 2.x dropped `run --dir` and `--variant`; FAKE_OPENCODE_VERSION=1.x imitates the old CLI.
+const ocVersion = process.env.FAKE_OPENCODE_VERSION || "2.2.1";
+const ocNew = Number(ocVersion.split(".")[0]) >= 2;
 if (args[0] === "--version") {
-  console.log({ claude: "9.9.9 (Claude Code)", codex: "codex-cli 9.9.9", cursor: "2099.01.01-fake", opencode: "9.9.9" }[kind]);
+  console.log({ claude: "9.9.9 (Claude Code)", codex: "codex-cli 9.9.9", cursor: "2099.01.01-fake", opencode: ocNew ? `opencode v${ocVersion}` : ocVersion }[kind]);
   process.exit(0);
+}
+if (kind === "opencode" && args[0] === "run") {
+  const bad = (ocNew ? ["--dir", "--variant"] : ["--standalone"]).find((f) => args.includes(f));
+  if (bad) {
+    process.stderr.write(`ERROR\n  Unrecognized flag: ${bad} in command opencode run\n`);
+    process.exit(1);
+  }
 }
 if (kind === "claude" && args[0] === "auth") {
   const loggedIn = !process.env.CLAUDE_CODE_SIMPLE; // mimic: bare mode never reads the saved login
@@ -132,7 +142,8 @@ if (kind === "opencode") {
   const ev = (type, data) => out({ type, timestamp: Date.now(), sessionID: sid, ...data });
   ev("step_start", { part: { type: "step-start" } });
   if (scenario === "fail") {
-    ev("error", { error: { name: "ProviderAuthError", data: { message: "no credentials (fake)" } } });
+    if (ocNew) ev("error", { error: { type: "provider.free-limit", message: "Free usage limit reached (fake)", status: 429, retryAfterMs: 4979000 } });
+    else ev("error", { error: { name: "ProviderAuthError", data: { message: "no credentials (fake)" } } });
     process.exit(1);
   }
   await slowPart();

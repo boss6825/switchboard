@@ -145,13 +145,14 @@ function plan(rows, only) {
   return { want, targets };
 }
 
-function copySkill(src, dest) {
+// `origin` is where the user installed from; `src` may be a staged temp copy of it.
+function copySkill(src, dest, origin = src) {
   fs.rmSync(dest, { recursive: true, force: true });
   fs.mkdirSync(path.dirname(dest), { recursive: true });
   // Filter on the path inside the skill: run through npx, `src` itself is under node_modules.
   fs.cpSync(src, dest, { recursive: true, filter: (p) => !/(^|\/)(node_modules|\.DS_Store|\.switchboard-install\.json)$/.test(path.relative(src, p)) });
   fs.chmodSync(path.join(dest, "scripts", "switchboard.mjs"), 0o755);
-  writeJSON(path.join(dest, MARKER), { version: VERSION, installedAt: new Date().toISOString(), source: src });
+  writeJSON(path.join(dest, MARKER), { version: VERSION, installedAt: new Date().toISOString(), source: origin });
 }
 
 function ownedOrAbsent(dest) {
@@ -190,8 +191,8 @@ export function cmdInstall(argv) {
   const staged = path.join(stage, SKILL);
   fs.cpSync(src, staged, { recursive: true, filter: (p) => !/(^|\/)(node_modules|\.DS_Store|\.switchboard-install\.json)$/.test(path.relative(src, p)) });
   try {
-    copySkill(staged, app);
-    for (const dir of targets.keys()) copySkill(staged, path.join(dir, SKILL));
+    copySkill(staged, app, src);
+    for (const dir of targets.keys()) copySkill(staged, path.join(dir, SKILL), src);
   } finally {
     fs.rmSync(stage, { recursive: true, force: true });
   }

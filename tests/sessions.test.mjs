@@ -145,3 +145,48 @@ test("search reads database-backed chats, not just their titles", { skip: !sqlit
   assert.match(s.run(["sessions", "search", "public API"]).stdout, /opencode:/);
   assert.match(s.run(["sessions", "search", "TTL is never refreshed"]).stdout, /cursor:/);
 });
+
+test("rows still in a database's write-ahead log are read (OpenCode 2.x keeps new chats there)", { skip: !sqlite }, () => {
+  const s = sandbox();
+  const writer = new sqlite.DatabaseSync(path.join(s.home, ".local", "share", "opencode", "opencode.db"));
+  try {
+    writer.exec("PRAGMA journal_mode=WAL; PRAGMA wal_autocheckpoint=0;");
+    writer.prepare("INSERT INTO session (id, project_id, parent_id, slug, directory, title, version, time_created, time_updated) VALUES (?, 'p1', NULL, 'x', ?, 'Fresh chat only in the WAL', '2.2.1', ?, ?)").run("ses_wal_only", s.repo, Date.now(), Date.now());
+    for (const mode of ["node", "cli"]) {
+      const r = s.run(["sessions", "--agent", "opencode", "--all"], { env: mode === "cli" ? { SWITCHBOARD_SQLITE: "cli" } : {} });
+      assert.match(r.stdout, /Fresh chat only in the WAL/, `${mode}: ${r.stdout}${r.stderr}`);
+    }
+  } finally {
+    writer.close();
+  }
+});
+
+test("OpenCode 2.x session_message rows: quoted prompt cleaned, tools read, bookkeeping rows skipped", { skip: !sqlite }, () => {
+  const s = sandbox();
+  const db = new sqlite.DatabaseSync(path.join(s.home, ".local", "share", "opencode", "opencode.db"));
+  try {
+    db.exec("CREATE TABLE session_v2 (id TEXT, directory TEXT, title TEXT, parent_id TEXT, time_created INTEGER, time_updated INTEGER); CREATE TABLE session_message (session_id TEXT, seq INTEGER, type TEXT, data TEXT);");
+    const now = Date.now();
+    db.prepare("INSERT INTO session_v2 VALUES ('ses_v2', ?, 'Fix the adder', NULL, ?, ?)").run(s.repo, now, now);
+    const rows = [
+      ["synthetic", { time: { created: now }, text: "<system-reminder>plan mode</system-reminder>" }],
+      ["user", { time: { created: now }, text: '"Fix the adder in math.mjs"' }],
+      ["assistant", { time: { created: now }, model: { id: "free-model", providerID: "opencode" }, content: [
+        { type: "text", text: "Looking at it." },
+        { type: "tool", name: "bash", state: { status: "completed", input: { command: "node test.mjs" }, content: [{ type: "text", text: "fail" }] } },
+        { type: "text", text: "Fixed: a - b is now a + b." },
+      ] }],
+      ["idle", { time: { created: now }, outcome: "succeeded" }],
+    ];
+    rows.forEach(([type, data], i) => db.prepare("INSERT INTO session_message VALUES ('ses_v2', ?, ?, ?)").run(i, type, JSON.stringify(data)));
+  } finally {
+    db.close();
+  }
+  const r = s.run(["sessions", "show", "opencode:ses_v2"]);
+  assert.match(r.stdout, /Fix the adder in math\.mjs/);
+  assert.doesNotMatch(r.stdout, /plan mode|"Fix the adder/);
+  assert.match(r.stdout, /\$ node test\.mjs/);
+  assert.match(r.stdout, /a - b is now a \+ b/);
+  assert.match(r.stdout, /model free-model/);
+  assert.doesNotMatch(r.stdout, /Install the opencode CLI/);
+});

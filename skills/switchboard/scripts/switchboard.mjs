@@ -8,7 +8,7 @@
 
 import fs from "node:fs";
 import { fileURLToPath } from "node:url";
-import { VERSION, SB_HOME, JOBS, POLICY_KEYS, loadConfig, setPolicy, unsetPolicy } from "./lib/config.mjs";
+import { VERSION, SB_HOME, JOBS, POLICY_KEYS, loadConfig, setPolicy, unsetPolicy, setReadOnly } from "./lib/config.mjs";
 import { describePolicy } from "./lib/policy.mjs";
 import { agent as getAgent, allAgents, agentNames } from "./lib/agents/index.mjs";
 import { SbError, die, parseArgs } from "./lib/util.mjs";
@@ -117,7 +117,9 @@ try {
   else if (cmd === "--version" || cmd === "version") console.log(VERSION);
   else if (!COMMANDS[cmd]) die(`unknown command "${cmd}". Run: switchboard --help`);
   else {
-    fs.mkdirSync(JOBS, { recursive: true });
+    // A dry run promises to write nothing, Switchboard's own state included.
+    if (cmd === "install" && rest.includes("--dry-run")) setReadOnly();
+    else fs.mkdirSync(JOBS, { recursive: true });
     await COMMANDS[cmd](rest);
   }
 } catch (e) {

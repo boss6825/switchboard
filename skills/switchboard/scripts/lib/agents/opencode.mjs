@@ -124,7 +124,7 @@ async function loadSession(meta, { preferDb = false } = {}) {
   }
   if (!loaded && exists(DB())) {
     const t = await tables(DB());
-    if (t.has("message") && t.has("part")) {
+    if (t.has("message") && t.has("part") && !t.has("session_message")) {
       const msgs = await query(DB(), "select id, data from message where session_id = ? order by time_created, id", [meta.id]);
       const parts = await query(DB(), "select message_id, data from part where session_id = ? order by time_created, id", [meta.id]);
       const byMsg = {};
@@ -132,17 +132,41 @@ async function loadSession(meta, { preferDb = false } = {}) {
       for (const m of msgs) eventsFromMessage({ info: JSON.parse(m.data), parts: byMsg[m.id] || [] }, events);
       loaded = true;
     } else if (t.has("session_message")) {
-      // Newer schema: one row per message with its parts inside `data`.
+      // Newer schema (OpenCode 2.x): one row per message, parts inside `data`.
+      // Row types: user (data.text), assistant (data.content[]: text, reasoning, tool),
+      // synthetic (plan-mode reminders), agent-switched and idle (bookkeeping).
       const rows = await query(DB(), "select type, data from session_message where session_id = ? order by seq", [meta.id]);
       for (const r of rows) {
         let d = {};
         try {
           d = JSON.parse(r.data);
         } catch {}
-        eventsFromMessage({ info: { role: d.role || r.type, ...d }, parts: d.parts || (d.text ? [{ type: "text", text: d.text }] : d.tool ? [{ type: "tool", ...d }] : []) }, events);
+        const ts = toMs(d.time?.created);
+        if (r.type === "user") {
+          // `opencode run` wraps a multi-word message in literal quotes; drop them.
+          let text = String(d.text ?? "");
+          if (text.length > 1 && text.startsWith('"') && text.endsWith('"')) text = text.slice(1, -1).replace(/\\"/g, '"');
+          if (text.trim()) events.push({ ts, type: "user", text });
+        } else if (r.type === "assistant") {
+          if (d.model?.id && !meta.model) meta.model = d.model.id;
+          for (const c of d.content || []) {
+            if (c.type === "text" && c.text?.trim()) events.push({ ts, type: "assistant", text: c.text });
+            else if (c.type === "reasoning" && c.text?.trim()) events.push({ ts, type: "reasoning", text: c.text });
+            else if (c.type === "tool") {
+              const st = c.state || {};
+              const tool = describeTool(c.name === "bash" ? "shell" : c.name, st.input || {});
+              tool.name = c.name;
+              tool.status = st.status;
+              const out = (st.content || []).map((x) => x.text).filter(Boolean).join("\n");
+              if (out) tool.output = out;
+              if (st.error) tool.error = typeof st.error === "string" ? st.error : JSON.stringify(st.error);
+              events.push({ ts, type: "tool", tool });
+            }
+          }
+          if (d.error) events.push({ ts, type: "error", text: d.error.message || d.error.type || JSON.stringify(d.error) });
+        } else if (r.type === "idle" && d.outcome && d.outcome !== "succeeded") events.push({ ts, type: "error", text: `session ended: ${d.outcome}` });
       }
       loaded = true;
-      notes.push("Read directly from OpenCode's newer database schema; tool details may be incomplete. Install the opencode CLI for a full export.");
     }
   }
   if (!loaded) notes.push("Could not read this session: the opencode CLI is not on PATH and the database was not readable.");
@@ -172,14 +196,15 @@ const adapter = {
     const b = this.bin();
     if (!b) return null;
     const r = run(b, ["--version"], { timeout: 15000 });
-    return r.ok ? r.out.trim() : null;
+    return r.ok ? r.out.trim().replace(/^opencode\s+v?/i, "") : null; // 2.x prints "opencode v2.2.1"
   },
   auth() {
     const b = this.bin();
     if (!b) return { ok: false, detail: "not installed" };
     const r = run(b, ["auth", "list"], { timeout: 20000 });
     const text = stripAnsi(r.out + r.err);
-    const n = (text.match(/^\s*[●•*-]\s+\S/gm) || []).length;
+    // 1.x lists "● Provider api"; 2.x prints "Provider  Label  stored|environment".
+    const n = (text.match(/^\s*[●•*-]\s+\S/gm) || []).length || (text.match(/\s(stored|environment)\s*$/gm) || []).length;
     if (r.ok && n) return { ok: true, detail: `${n} provider credential(s)` };
     return { ok: null, detail: "no provider credentials found; OpenCode's free models may still work (check: opencode models)" };
   },
@@ -205,11 +230,16 @@ const adapter = {
   },
 
   buildRun(job, prompt) {
-    const args = ["run", "--format", "json", "--dir", job.cwd];
+    // 2.x dropped --dir and --variant: the folder is the working directory, the
+    // variant rides on the model ("provider/model#low"), and --standalone keeps
+    // the job off the shared background service so cancel stops all of it.
+    const v2 = Number((this.version() || "0").split(".")[0]) >= 2;
+    const args = ["run", "--format", "json", ...(v2 ? ["--standalone"] : ["--dir", job.cwd])];
     if (job.mode === "write") args.push("--auto"); // approve what isn't explicitly denied; nobody can answer prompts headless
     else args.push("--agent", "plan"); // OpenCode's built-in read-only agent
-    if (job.model) args.push("--model", job.model);
-    if (job.effort) args.push("--variant", job.effort);
+    if (v2 && job.effort && !job.model) die("OpenCode 2.x takes effort as part of the model (provider/model#variant); name a model with --model, or leave out --effort");
+    if (job.model) args.push("--model", v2 && job.effort ? `${job.model}#${job.effort}` : job.model);
+    if (!v2 && job.effort) args.push("--variant", job.effort);
     if (job.resumeSessionId) args.push("--session", job.resumeSessionId);
     args.push(prompt);
     return { bin: job.agentBin, args, stdin: null };
@@ -253,7 +283,8 @@ const adapter = {
           if (p.reason === "stop" && !errored) ctx.final({ isError: false, usage: tokens, costUsd: cost || null });
           break;
         case "error": {
-          const msg = ev.error?.data?.message || ev.error?.message || ev.error?.name || JSON.stringify(ev.error || ev);
+          let msg = ev.error?.data?.message || ev.error?.message || ev.error?.name || JSON.stringify(ev.error || ev);
+          if (ev.error?.retryAfterMs) msg += ` (retry in ${Math.ceil(ev.error.retryAfterMs / 60000)} min)`;
           errored = true;
           ctx.error(msg);
           ctx.final({ isError: true, result: msg });

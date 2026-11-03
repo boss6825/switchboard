@@ -48,6 +48,22 @@ test("write vs read-only flags per agent", () => {
   assert.ok(!flags["claude:write"].some((a) => a.includes("SCENARIO")));
 });
 
+test("OpenCode 2.x gets its folder from the working directory and effort as model#variant; 1.x keeps --dir/--variant", () => {
+  const s = sandbox();
+  const args = (env) => {
+    const r = s.run(["run", "opencode", "--model", "opencode/free-model-2.0", "--effort", "low", "--wait", "--wait-timeout", "60", "SCENARIO:ok"], { env });
+    assert.equal(r.status, 0, r.stderr);
+    const res = s.run(["result", jobId(r.stdout)]).stdout;
+    assert.match(res, /DONE/, res);
+    return s.lastRun("opencode").args;
+  };
+  const v2 = args({});
+  assert.ok(v2.includes("opencode/free-model-2.0#low") && v2.includes("--standalone") && !v2.includes("--dir"), v2.join(" "));
+  const v1 = args({ FAKE_OPENCODE_VERSION: "1.19.5" });
+  assert.ok(v1.includes("--dir") && v1.includes("--variant") && v1.includes("opencode/free-model-2.0"), v1.join(" "));
+  assert.match(s.run(["doctor", "--no-auth"]).stdout, /opencode 2\.2\.1\s/, "version shown once, without the name or v");
+});
+
 test("the brief carries the sub-agent rules, and the host agent's name", () => {
   const s = sandbox();
   const r = s.run(["run", "cursor", "--wait", "--wait-timeout", "60", "SCENARIO:ok task"], { env: { CLAUDECODE: "1" } });
@@ -72,7 +88,7 @@ test("a child claude never inherits the parent session's bare-mode variables", (
 
 test("failed jobs report the agent's own error", () => {
   const s = sandbox();
-  for (const [agent, msg] of [["codex", /usage limit/], ["claude", /Not logged in/], ["cursor", /quota exceeded/], ["opencode", /no credentials/]]) {
+  for (const [agent, msg] of [["codex", /usage limit/], ["claude", /Not logged in/], ["cursor", /quota exceeded/], ["opencode", /Free usage limit reached \(fake\) \(retry in 83 min\)/]]) {
     const r = s.run(["run", agent, "--wait", "--wait-timeout", "60", "SCENARIO:fail"]);
     const res = s.run(["result", jobId(r.stdout)]).stdout;
     assert.match(res, /FAILED/, `${agent}: ${res}`);

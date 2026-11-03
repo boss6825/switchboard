@@ -2,6 +2,7 @@
 // desktop app, OpenCode). Uses node:sqlite when this Node has it, otherwise
 // the sqlite3 command (preinstalled on macOS and most Linux distributions).
 
+import fs from "node:fs";
 import { run, which, die } from "./util.mjs";
 
 let nodeSqlite;
@@ -24,24 +25,35 @@ async function loadNodeSqlite() {
   return nodeSqlite;
 }
 
-// Open with immutable=1 so a database the app is writing to right now is read
-// without taking locks or touching its WAL files. Rows may lag by a few seconds.
+// How to open a database another app is writing to. Without a write-ahead log,
+// immutable=1 reads it without locks or touching any file. With one, the newest
+// rows live in <file>-wal until the app checkpoints, and immutable=1 skips that
+// file (OpenCode 2.x keeps fresh chats there), so open it read-only instead.
+function uris(file) {
+  let wal = 0;
+  try {
+    wal = fs.statSync(`${file}-wal`).size;
+  } catch {}
+  const base = `file:${encodeURI(file)}`;
+  return wal > 0 ? [`${base}?mode=ro`, `${base}?immutable=1`] : [`${base}?immutable=1`];
+}
+
 export async function query(file, sql, params = []) {
   if (process.env.SWITCHBOARD_SQLITE !== "cli") {
     const mod = await loadNodeSqlite();
     if (mod?.DatabaseSync) {
-      let db;
-      try {
+      for (const uri of [...uris(file), file]) {
+        let db;
         try {
-          db = new mod.DatabaseSync(`file:${encodeURI(file)}?immutable=1`, { readOnly: true });
-        } catch {
-          db = new mod.DatabaseSync(file, { readOnly: true });
+          db = new mod.DatabaseSync(uri, { readOnly: true });
+          return db.prepare(sql).all(...params);
+        } catch (e) {
+          if (uri === file) throw e;
+        } finally {
+          try {
+            db?.close();
+          } catch {}
         }
-        return db.prepare(sql).all(...params);
-      } finally {
-        try {
-          db?.close();
-        } catch {}
       }
     }
   }
@@ -53,9 +65,12 @@ export async function query(file, sql, params = []) {
     const v = params[i++];
     return typeof v === "number" ? String(v) : `'${String(v).replace(/'/g, "''")}'`;
   });
-  const r = run(bin, ["-json", "-readonly", `file:${encodeURI(file)}?immutable=1`, text], { timeout: 120000 });
-  if (!r.ok) die(`sqlite3 failed on ${file}: ${r.err.trim()}`);
-  return r.out.trim() ? JSON.parse(r.out) : [];
+  let r;
+  for (const uri of uris(file)) {
+    r = run(bin, ["-json", "-readonly", uri, text], { timeout: 120000 });
+    if (r.ok) return r.out.trim() ? JSON.parse(r.out) : [];
+  }
+  die(`sqlite3 failed on ${file}: ${r.err.trim()}`);
 }
 
 export async function tables(file) {

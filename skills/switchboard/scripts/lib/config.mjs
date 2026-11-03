@@ -52,6 +52,12 @@ const DEFAULTS = {
 };
 
 let cached = null;
+let readOnly = false;
+
+// For `install --dry-run`: use the config, never write it.
+export function setReadOnly() {
+  readOnly = true;
+}
 
 export function loadConfig() {
   if (cached) return cached;
@@ -62,7 +68,7 @@ export function loadConfig() {
     if (imported) {
       cfg.agents.cursor = imported;
       cfg.importedFrom = "~/.cursor-bridge/config.json";
-      try {
+      if (!readOnly) try {
         writeJSON(CONFIG_FILE, cfg);
         process.stderr.write("switchboard: imported your Cursor model policy from ~/.cursor-bridge/config.json\n");
       } catch {}

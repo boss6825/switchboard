@@ -286,7 +286,7 @@ export default {
   prefix: "cx",
   installHint: "npm install -g @openai/codex   (or: brew install codex)",
   loginHint: "codex login",
-  efforts: ["minimal", "low", "medium", "high", "xhigh", "max", "ultra"],
+  efforts: ["none", "minimal", "low", "medium", "high", "xhigh", "max", "ultra"],
   supports: { resume: true, modes: ["write", "ask"], stdinPrompt: true },
   verifiesModel: false,
 
@@ -319,6 +319,17 @@ export default {
 
   listModels() {
     return modelsCache().map((m) => m.id);
+  },
+  // The top-level `model = "..."` in config.toml (before any [section]).
+  defaultModel() {
+    let text = "";
+    try {
+      text = fs.readFileSync(path.join(CODEX_HOME(), "config.toml"), "utf8");
+    } catch {
+      return null;
+    }
+    const top = text.split(/^\s*\[/m)[0];
+    return (/^\s*model\s*=\s*"([^"]+)"/m.exec(top) || [])[1] || null;
   },
   resolveModel(want, effort, { notes }) {
     const models = modelsCache();

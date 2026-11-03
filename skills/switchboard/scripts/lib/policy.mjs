@@ -32,6 +32,9 @@ export function resolveModel(adapter, { requested = null, effort = null } = {}) 
     // can only check if the agent reports a concrete id at startup.
     if (pol.allow.length || (pol.deny.length && !adapter.verifiesModel))
       die(`${label} has an ${pol.allow.length ? "allow" : "deny"} list but no default model, so its own default could be one the list rules out. Set one: switchboard policy set ${adapter.name} model <id>`);
+    // Still refuse an effort the agent's own default model does not offer.
+    const def = eff && adapter.defaultModel?.();
+    if (def) adapter.resolveModel(def, eff, { notes: [] });
     return { id: null, effort: eff, notes, requested: null };
   }
 

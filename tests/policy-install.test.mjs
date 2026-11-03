@@ -62,6 +62,13 @@ test("Codex family aliases and per-model effort checks", () => {
   assert.match(bad.stderr, /does not offer effort "medium"/);
 });
 
+test("with no model named, the effort is checked against Codex's own default model", () => {
+  const s = sandbox();
+  fs.writeFileSync(path.join(s.home, ".codex", "config.toml"), 'model = "gpt-5.6-luna"\nmodel_reasoning_effort = "high"\n\n[profiles.x]\nmodel = "gpt-6-luna"\n');
+  assert.match(s.run(["run", "codex", "--effort", "medium", "SCENARIO:ok"]).stderr, /gpt-5\.6-luna does not offer effort "medium"/);
+  assert.equal(s.run(["run", "codex", "--effort", "high", "--wait", "--wait-timeout", "60", "SCENARIO:ok"]).status, 0);
+});
+
 test("enabled=false keeps an agent off the team", () => {
   const s = sandbox();
   s.run(["policy", "set", "opencode", "enabled", "false"]);
@@ -139,6 +146,18 @@ test("install works when run from inside node_modules (npx)", () => {
   const r = spawnSync(process.execPath, [path.join(pkg, "skills", "switchboard", "scripts", "switchboard.mjs"), "install"], { cwd: s.repo, env: s.env, encoding: "utf8" });
   assert.equal(r.status, 0, r.stderr);
   assert.ok(fs.existsSync(path.join(s.home, ".agents", "skills", "switchboard", "scripts", "lib", "jobs.mjs")));
+});
+
+test("a dry run writes nothing, not even Switchboard's own state; a real install records where it came from", () => {
+  const s = sandbox({ agents: ["claude"] });
+  fs.mkdirSync(path.join(s.home, ".cursor-bridge"), { recursive: true });
+  fs.writeFileSync(path.join(s.home, ".cursor-bridge", "config.json"), JSON.stringify({ model: "grok:latest" }));
+  const dry = s.run(["install", "--dry-run"]);
+  assert.equal(dry.status, 0, dry.stderr);
+  assert.ok(!fs.existsSync(path.join(s.home, ".switchboard")), "dry run created ~/.switchboard");
+  assert.equal(s.run(["install"]).status, 0);
+  const marker = JSON.parse(fs.readFileSync(path.join(s.home, ".claude", "skills", "switchboard", ".switchboard-install.json")));
+  assert.equal(marker.source, path.resolve(path.dirname(new URL(import.meta.url).pathname), "..", "skills", "switchboard"));
 });
 
 test("install only for named agents", () => {
