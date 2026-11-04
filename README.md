@@ -326,4 +326,4 @@ Switchboard grew out of cursor-bridge, a Claude Code plugin for delegating to Cu
 
 ## License
 
-MIT
+AGPL-3.0
