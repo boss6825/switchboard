@@ -109,7 +109,10 @@ You don't need to remember commands. Talk to your agent:
 - *"Have Cursor write the tests for this module while you work on the migration."*
 - *"Get a second opinion on this diff from Codex."*
 
-The skill tells the agent which `switchboard` command to run. The same commands work in a terminal:
+The skill tells the agent which `switchboard` command to run. The same commands work in a terminal.
+
+<details>
+<summary>Commands</summary>
 
 | Command | What it does |
 |---|---|
@@ -124,6 +127,8 @@ The skill tells the agent which `switchboard` command to run. The same commands 
 | `switchboard doctor` / `install` / `uninstall` | Setup |
 
 A `<ref>` is `agent:last`, `agent:<id-prefix>` (as `sessions` prints it), or words from the title. `switchboard <command> --help` shows options and examples; `switchboard help --all` prints every command. Color is for terminals (`NO_COLOR=1` turns it off). Wrong usage exits 2; other failures exit 1.
+
+</details>
 
 <details id="how-it-works">
 <summary>How it works</summary>
