@@ -2,8 +2,7 @@
 
 **Your coding agents, working as one team.**
 
-Switchboard lets Claude Code, Codex, Cursor, OpenCode, and Antigravity on the same machine read each other's chats and run each other as sub-agents. It is one small command-line tool, plus a skill every agent loads. It uses each agent's own CLI and the chat files already on your disk.
-
+Make your Coding agent control the other coding agents. Switchboard lets Claude Code, Codex, Cursor, OpenCode, and Antigravity on the same machine to collaborate and run each other as sub-agents. It is one small command-line tool.
 Two things it does:
 
 1. **Hand off a chat.** You hit Codex's 5-hour limit halfway through a task. Open Claude Code and say *"continue my last Codex chat"*. Claude reads that session (messages, commands and exit codes, edited files, web searches, the limit it hit), checks the repo as it is now, and carries on.
