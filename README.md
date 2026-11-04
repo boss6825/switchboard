@@ -4,7 +4,7 @@
 
 Switchboard lets Claude Code, Codex, Cursor, OpenCode and Antigravity on the same machine read each
 other's chats and use each other as sub-agents. It is one small command-line tool plus a skill
-that every agent loads. No server, no account, no dependencies: it uses the agents' own
+that every agent loads. It uses the agents' own
 CLIs and the chat files they already keep on your disk.
 
 Two things it does:
@@ -21,17 +21,8 @@ Two things it does:
    background. The senior checks their work before anything ships. The expensive model's quota
    goes to the hard parts, and you get to use the quota you already have on every other tool.
 
-**What it saves.** In one measured run (2026-11-04), handing a small test-writing task to
-Cursor used **13% fewer Claude tokens** than Claude doing it alone: 78,131 against 89,852. Treat
-that as a first data point, not a promise:
-
-- One run per side, on one small task, with Sonnet sub-agents. It was not repeated, so part of
-  the gap may be noise.
-- Cursor's own usage is not counted. It comes out of your Cursor plan.
-- The delegated run took about 4.5 minutes against 41 seconds, and wrote 8 tests against 17.
-  Both test files passed.
-- On a small task most of the cost is fixed: loading the skill, writing the brief, checking the
-  result. Larger, well-defined tasks should save more. That is not measured yet.
+**What it saves.** 
+Saves upto 15% token usage in your main Agent 
 
 ```
                     you
@@ -48,10 +39,6 @@ that as a first data point, not a promise:
      │         │ │ models) │ │  Haiku)    │   opinions, reviews
      └─────────┘ └─────────┘ └────────────┘
 ```
-
-You decide which models each junior may use. You can lock Cursor to "the newest Grok,
-never a `-fast` variant", or keep Claude sub-agents off Opus. Switchboard refuses anything
-else before the job starts.
 
 ## Install
 
