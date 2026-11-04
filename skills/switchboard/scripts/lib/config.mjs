@@ -27,7 +27,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { home, readJSON, writeJSON, isTrue } from "./util.mjs";
 
-export const VERSION = "0.1.0";
+export const VERSION = "0.1.1";
 export const SB_HOME = process.env.SWITCHBOARD_HOME || home(".switchboard");
 export const JOBS = path.join(SB_HOME, "jobs");
 export const CONFIG_FILE = path.join(SB_HOME, "config.json");

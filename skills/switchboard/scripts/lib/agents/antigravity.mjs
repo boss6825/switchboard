@@ -9,7 +9,7 @@
 
 import fs from "node:fs";
 import path from "node:path";
-import { home, which, run, readJSON, writeJSON, mtime, toMs, cmpVersion, oneLine, stripAnsi, die, exists } from "../util.mjs";
+import { home, which, run, readJSON, writeJSON, mtime, toMs, cmpVersion, oneLine, stripAnsi, die, exists, CLI } from "../util.mjs";
 import { SB_HOME, policyFor } from "../config.mjs";
 import { query } from "../sqlite.mjs";
 import { describeTool, desktopApp, isUnder, titleFrom } from "./common.mjs";
@@ -71,7 +71,7 @@ function resolveModel(want, effort, { notes }) {
   if (alias || bare) {
     const family = alias ? alias[1] : bare[2];
     const version = alias ? newestInFamily(family, ids) : bare[1];
-    if (!version) die(`no Gemini ${family} models in \`agy models\` (see: switchboard models antigravity)`);
+    if (!version) die(`no Gemini ${family} models in \`agy models\` (see: ${CLI} models antigravity)`);
     const eff = effort || "medium";
     const id = familyId(family, version, eff, ids);
     if (!id) die(`Gemini ${version} ${family} has no "${eff}" effort; available: ${EFFORTS.filter((e) => familyId(family, version, e, ids)).join(", ") || "none"}`);
@@ -79,7 +79,7 @@ function resolveModel(want, effort, { notes }) {
     return { id, effort: eff };
   }
   if (effort && parseModelId(want)) die(`"${want}" already names its effort; use the family (e.g. ${want.replace(/-(low|medium|high|xhigh|max)$/, "")}) with --effort, or drop --effort`);
-  if (ids.length && !ids.includes(want)) die(`"${want}" is not in \`agy models\` (see: switchboard models antigravity)`);
+  if (ids.length && !ids.includes(want)) die(`"${want}" is not in \`agy models\` (see: ${CLI} models antigravity)`);
   return { id: want, effort: parseModelId(want)?.effort || effort || null };
 }
 

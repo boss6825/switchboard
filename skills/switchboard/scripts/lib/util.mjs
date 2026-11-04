@@ -5,12 +5,19 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import zlib from "node:zlib";
+import { bold, dim } from "./ui.mjs";
 
 export class SbError extends Error {}
+// Wrong command line (unknown option, missing value): exits 2 and points at --help.
+export class UsageError extends SbError {}
 
 // Throw a user-facing error; the CLI entry point prints it without a stack.
 export function die(msg) {
   throw new SbError(msg);
+}
+
+export function usage(msg) {
+  throw new UsageError(msg);
 }
 
 export function readJSON(file, fallback = null) {
@@ -268,13 +275,13 @@ export function parseArgs(argv, spec, aliases = {}) {
     if (a.startsWith("--")) {
       let [key, val] = a.slice(2).split(/=(.*)/s, 2);
       const kind = spec[key];
-      if (!kind) die(`unknown option --${key}`);
+      if (!kind) usage(`unknown option --${key}`);
       if (kind === "bool") out[key] = true;
       else if (kind === "optional") out[key] = val ?? true;
       else {
         if (val === undefined) {
           val = argv[++i];
-          if (val === undefined) die(`--${key} needs a value`);
+          if (val === undefined) usage(`--${key} needs a value`);
         }
         if (kind === "list") (out[key] ||= []).push(val);
         else out[key] = val;
@@ -357,13 +364,27 @@ export function mtime(p) {
   }
 }
 
-export function table(rows, headers) {
+// paint(paddedCell, column) styles body cells after padding, so colors never
+// throw the columns off. Headers are bold and the rule dim, on a terminal only.
+export function table(rows, headers, { paint } = {}) {
   const all = [headers, ...rows].map((r) => r.map((c) => String(c ?? "")));
   const widths = headers.map((_, i) => Math.max(...all.map((r) => [...r[i]].length)));
   return all
     .map((r, ri) => {
-      const line = r.map((c, i) => (i === r.length - 1 ? c : c + " ".repeat(widths[i] - [...c].length))).join("  ");
-      return ri === 0 ? `${line}\n${widths.map((w) => "-".repeat(w)).join("  ")}` : line;
+      const cells = r.map((c, i) => (i === r.length - 1 ? c : c + " ".repeat(widths[i] - [...c].length)));
+      if (ri === 0) return `${bold(cells.join("  "))}\n${dim(widths.map((w) => "-".repeat(w)).join("  "))}`;
+      return (paint ? cells.map((c, i) => paint(c, i)) : cells).join("  ");
     })
     .join("\n");
 }
+
+// The command to show in hints and help: "sw" when that is how we were run, or
+// when `sw` on PATH is this same script (fewer tokens for agents reading the
+// output); otherwise "switchboard". CLI_ON_PATH: whether CLI runs this script.
+const self = realPath(process.argv[1] || "");
+const runs = (bin) => {
+  const p = which(bin);
+  return !!p && realPath(p) === self;
+};
+export const CLI = path.basename(process.argv[1] || "") === "sw" || runs("sw") ? "sw" : "switchboard";
+export const CLI_ON_PATH = path.basename(process.argv[1] || "") === CLI || runs(CLI);

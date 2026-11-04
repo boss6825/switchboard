@@ -114,7 +114,9 @@ test("install puts one self-contained copy where each agent looks, then uninstal
   }
   assert.ok(!fs.existsSync(path.join(s.home, ".cursor", "skills", "switchboard")), "Cursor reads ~/.claude/skills; no extra copy");
   const shim = path.join(s.home, ".local", "bin", "switchboard");
+  const short = path.join(s.home, ".local", "bin", "sw");
   assert.ok(fs.lstatSync(shim).isSymbolicLink());
+  assert.ok(fs.lstatSync(short).isSymbolicLink(), "the short sw command is linked too");
 
   // The installed copy runs on its own.
   const installed = path.join(s.home, ".claude", "skills", "switchboard", "scripts", "switchboard.mjs");
@@ -135,6 +137,7 @@ test("install puts one self-contained copy where each agent looks, then uninstal
   assert.ok(!fs.existsSync(path.join(s.home, ".claude", "skills", "switchboard")));
   assert.ok(fs.existsSync(path.join(s.home, ".agents", "skills", "switchboard")), "foreign folder kept");
   assert.ok(!fs.existsSync(shim));
+  assert.ok(!fs.existsSync(short));
 });
 
 test("install works when run from inside node_modules (npx)", () => {
@@ -242,4 +245,39 @@ test("install asks nothing without a terminal: it keeps --spend, else defaults t
   assert.doesNotMatch(s.run(["install"]).stdout, /No terminal to ask in/, "an earlier choice is kept, not re-asked");
   assert.match(s.run(["policy", "spend", "included"]).stdout, /Cursor .*spend=included/);
   assert.notEqual(s.run(["install", "--spend", "cheap"]).status, 0);
+});
+
+test("install leaves sw out when another sw command is on PATH; hints use sw once it is ours", () => {
+  const s = sandbox({ agents: ["claude"] });
+  fs.mkdirSync(path.join(s.home, ".local", "bin"), { recursive: true });
+  const other = path.join(path.dirname(s.home), "other-bin");
+  fs.mkdirSync(other);
+  fs.writeFileSync(path.join(other, "sw"), "#!/bin/sh\necho other\n", { mode: 0o755 });
+  const r = s.run(["install"], { env: { PATH: `${other}:${s.env.PATH}` } });
+  assert.equal(r.status, 0, r.stderr);
+  assert.match(r.stdout, /another sw command is on your PATH/);
+  assert.ok(!fs.existsSync(path.join(s.home, ".local", "bin", "sw")));
+
+  const t = sandbox({ agents: ["claude"] });
+  fs.mkdirSync(path.join(t.home, ".local", "bin"), { recursive: true });
+  assert.equal(t.run(["install"]).status, 0);
+  const { spawnSync } = process.getBuiltinModule("node:child_process");
+  const viaSw = spawnSync(path.join(t.home, ".local", "bin", "sw"), ["--help"], { cwd: t.repo, env: t.env, encoding: "utf8" });
+  assert.equal(viaSw.status, 0, viaSw.stderr);
+  assert.match(viaSw.stdout, /Usage: sw <command>/);
+});
+
+test("npx: a temporary Switchboard copy on PATH does not stop the links", () => {
+  const s = sandbox({ agents: ["claude"] });
+  fs.mkdirSync(path.join(s.home, ".local", "bin"), { recursive: true });
+  // What npx does: its own copy of the package, with both commands, ahead on PATH.
+  const npxBin = path.join(path.dirname(s.home), "npx-bin");
+  const pkg = path.join(path.dirname(s.home), "npx-pkg");
+  fs.mkdirSync(npxBin);
+  fs.cpSync(path.resolve(path.dirname(new URL(import.meta.url).pathname), "..", "skills"), path.join(pkg, "skills"), { recursive: true });
+  for (const n of ["sw", "switchboard"]) fs.symlinkSync(path.join(pkg, "skills", "switchboard", "scripts", "switchboard.mjs"), path.join(npxBin, n));
+  const r = s.run(["install"], { env: { PATH: `${npxBin}:${s.env.PATH}` } });
+  assert.equal(r.status, 0, r.stderr);
+  assert.doesNotMatch(r.stdout, /another .* command is on your PATH/);
+  for (const n of ["sw", "switchboard"]) assert.ok(fs.lstatSync(path.join(s.home, ".local", "bin", n)).isSymbolicLink(), n);
 });

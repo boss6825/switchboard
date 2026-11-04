@@ -10,7 +10,7 @@ import fs from "node:fs";
 import path from "node:path";
 import {
   home, which, run, readJSON, writeJSON, readText, parseJsonl, walk, mtime, toMs, cmpVersion,
-  oneLine, stripAnsi, die, exists, realPath,
+  oneLine, stripAnsi, die, exists, realPath, CLI,
 } from "../util.mjs";
 import { SB_HOME, policyFor } from "../config.mjs";
 import { query, tables } from "../sqlite.mjs";
@@ -83,7 +83,7 @@ function resolveModel(want, effort, { notes }) {
   if (alias || bare) {
     const family = (alias || bare)[1];
     const version = alias ? newestInFamily(family, ids) : bare[2];
-    if (!version) die(`no ${family} models on your Cursor plan (checked ${ids.length} models; refresh with: switchboard models cursor --refresh)`);
+    if (!version) die(`no ${family} models on your Cursor plan (checked ${ids.length} models; refresh with: ${CLI} models cursor --refresh)`);
     const eff = effort || "high";
     const id = familyId(family, version, eff, ids);
     if (!id) die(`${family} ${version} has no "${eff}" effort on your plan; available: ${EFFORTS.filter((e) => familyId(family, version, e, ids)).join(", ") || "none"}`);
@@ -95,7 +95,7 @@ function resolveModel(want, effort, { notes }) {
     return { id, effort: eff };
   }
   if (effort && !parseModelId(want)) die(`--effort applies to a family model (e.g. grok:latest or grok-4.7), not to "${want}"`);
-  if (ids.length && !ids.includes(want)) die(`"${want}" is not a model on your Cursor plan (see: switchboard models cursor ${want.split("-")[0]})`);
+  if (ids.length && !ids.includes(want)) die(`"${want}" is not a model on your Cursor plan (see: ${CLI} models cursor ${want.split("-")[0]})`);
   return { id: want, effort: parseModelId(want)?.effort || null };
 }
 

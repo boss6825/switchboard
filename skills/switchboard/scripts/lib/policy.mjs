@@ -6,14 +6,14 @@
 // A job that cannot get an allowed model does not start. There is no silent
 // fallback to a different model.
 
-import { die, globRe, matchesAny } from "./util.mjs";
+import { die, globRe, matchesAny, CLI } from "./util.mjs";
 import { policyFor } from "./config.mjs";
 
 export function resolveModel(adapter, { requested = null, effort = null } = {}) {
   const pol = policyFor(adapter.name);
   const notes = [];
   const label = adapter.label;
-  if (!pol.enabled) die(`${label} is turned off as a sub-agent (policy: enabled=false). Change it with: switchboard policy set ${adapter.name} enabled true`);
+  if (!pol.enabled) die(`${label} is turned off as a sub-agent (policy: enabled=false). Change it with: ${CLI} policy set ${adapter.name} enabled true`);
 
   if (requested && !pol.chooseModel && requested !== pol.model)
     die(`the user locked ${label}'s model to ${pol.model ? `"${pol.model}"` : "its own default"}; do not pass --model.${pol.chooseEffort ? " You may still choose --effort." : ""}`);
@@ -28,7 +28,7 @@ export function resolveModel(adapter, { requested = null, effort = null } = {}) 
   // Some agents can bill whatever the model (an API key instead of the plan).
   const billed = included?.preflight?.();
   if (billed)
-    die(`${label} ${billed}. The user allows only free or plan-included models (spend=included), so do not work around this; they can change it with: switchboard policy spend any`);
+    die(`${label} ${billed}. The user allows only free or plan-included models (spend=included), so do not work around this; they can change it with: ${CLI} policy spend any`);
   let want = requested || pol.model || null;
   if (!want && included?.defaultModel) want = included.defaultModel(notes);
   const eff = effort || pol.effort || null;
@@ -39,7 +39,7 @@ export function resolveModel(adapter, { requested = null, effort = null } = {}) 
     // With no model named, the agent runs its own default, which Switchboard
     // can only check if the agent reports a concrete id at startup.
     if (pol.allow.length || (pol.deny.length && !adapter.verifiesModel))
-      die(`${label} has an ${pol.allow.length ? "allow" : "deny"} list but no default model, so its own default could be one the list rules out. Set one: switchboard policy set ${adapter.name} model <id>`);
+      die(`${label} has an ${pol.allow.length ? "allow" : "deny"} list but no default model, so its own default could be one the list rules out. Set one: ${CLI} policy set ${adapter.name} model <id>`);
     // Still refuse an effort the agent's own default model does not offer.
     const def = eff && adapter.defaultModel?.();
     if (def) adapter.resolveModel(def, eff, { notes: [] });
@@ -62,7 +62,7 @@ export function checkModelAllowed(adapter, id, requested = null, { runtime = fal
   const names = [...new Set([runtime ? null : requested, ...(id ? adapter.matchNames(id) : [])].filter(Boolean))];
   const why = id && pol.spend === "included" && adapter.included?.check?.(id);
   if (why)
-    die(`${adapter.label} model "${id}" ${why}. The user allows only free or plan-included models (spend=included), so do not switch to a paid one; they can change this with: switchboard policy spend any`);
+    die(`${adapter.label} model "${id}" ${why}. The user allows only free or plan-included models (spend=included), so do not switch to a paid one; they can change this with: ${CLI} policy spend any`);
   const blocked = names.find((n) => matchesAny(n, pol.deny));
   if (blocked) die(`${adapter.label} model "${id || requested}" is blocked by the user's deny list (${pol.deny.join(", ")})`);
   if (!pol.allow.length) return;

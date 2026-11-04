@@ -63,8 +63,11 @@ You need Node.js 18 or later and at least one of: [Claude Code](https://claude.c
 **From a terminal:**
 
 ```bash
-npx -y github:boss6825/switchboard install
+npx -y switchboard-pro install
 ```
+
+The npm package is `switchboard-pro`; the commands it gives you are `switchboard` and the
+shorter `sw` (the same tool; `sw` keeps agents' command lines and the hints it prints short).
 
 **Or paste this into any of your coding agents:**
 
@@ -72,7 +75,7 @@ npx -y github:boss6825/switchboard install
 Install Switchboard (https://github.com/boss6825/switchboard) for every coding agent on this
 machine. First ask me one question: may sub-agents use only free and plan-included models
 (recommended), or any model, including ones billed at API prices? Then run
-`npx -y github:boss6825/switchboard install --spend included` (or `--spend any`), then `switchboard doctor` (or
+`npx -y switchboard-pro install --spend included` (or `--spend any`), then `sw doctor` (or
 `node ~/.switchboard/app/scripts/switchboard.mjs doctor` if that is not on PATH). Tell me which
 agents are ready. For any agent CLI that is missing or not logged in, give me the exact command
 to run myself; do not install or log in for me.
@@ -89,13 +92,27 @@ looks, using as few copies as possible:
 | OpenCode only | `~/.config/opencode/skills/switchboard` | |
 | Antigravity | `~/.gemini/antigravity-cli/skills/switchboard` | |
 
-It also copies the tool to `~/.switchboard/app` and links `~/.local/bin/switchboard` to it.
+It also copies the tool to `~/.switchboard/app` and links `~/.local/bin/switchboard` and
+`~/.local/bin/sw` to it. If another `sw` command is already on your PATH, it leaves `sw` out and
+says so (`--force` adds it anyway).
 In a terminal it asks once which models sub-agents may use (see [Spending](#spending)); an agent
 running the install passes `--spend` instead, and with neither it picks free-only.
 Restart open agent sessions afterwards. `switchboard uninstall` removes only what it added.
 
 <details>
 <summary>Other ways to install</summary>
+
+As a global npm package (gives you `switchboard` and `sw`; then run `sw install` to add the skill):
+
+```bash
+npm install -g switchboard-pro
+```
+
+Straight from GitHub:
+
+```bash
+npx -y github:boss6825/switchboard install
+```
 
 From a clone:
 
@@ -161,6 +178,10 @@ terminal:
 | `switchboard doctor` / `install` / `uninstall` | Setup |
 
 A `<ref>` is `agent:last`, `agent:<id-prefix>` (as `sessions` prints it), or words from the title.
+
+`switchboard <command> --help` shows a command's options and examples; `switchboard help --all`
+prints every command at once. Output is colored only in a terminal (`NO_COLOR=1` turns it off);
+agents and pipes get plain text. Wrong usage exits 2, other failures exit 1.
 
 ### A handoff, start to finish
 

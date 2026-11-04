@@ -20,16 +20,17 @@ const KIND_HINT = {
   "rate-limit": "this agent is out of usage for now. Wait, use another agent, or do it yourself; do not retry right away.",
   "not-free": "the account cannot pay for this model. Do not switch to another paid model; tell the user.",
   "not-logged-in": "the user must log in to this agent's CLI; you cannot do it for them.",
-  "model-gone": "the model is missing, retired, or does not accept this setting. Check: switchboard models <agent>.",
+  "model-gone": `the model is missing, retired, or does not accept this setting. Check: ${CLI} models <agent>.`,
   policy: "the user's policy refused this. Do not work around it; tell the user.",
   timeout: "the job ran out of time. Resume it with a narrower task, or raise --timeout.",
   "task-failed": "the agent ran but did not finish. Resume with what went wrong, or rerun once one step up, or do it yourself.",
 };
+import { bold, dim, status as paintStatus } from "./ui.mjs";
 import { snapshot, diffSnapshots, git, repoRoot, defaultBranch } from "./git.mjs";
 import { agent as getAgent, agentNames } from "./agents/index.mjs";
 import {
-  die, readJSON, writeJSON, parseArgs, readStdin, pidAlive, realPath,
-  fmtDuration, clock, oneLine, SbError, childEnv, canon,
+  die, usage, readJSON, writeJSON, parseArgs, readStdin, pidAlive, realPath,
+  fmtDuration, clock, oneLine, SbError, childEnv, canon, CLI, CLI_ON_PATH,
 } from "./util.mjs";
 
 export const TERMINAL = new Set(["done", "failed", "cancelled", "timeout", "lost"]);
@@ -40,7 +41,7 @@ export let SCRIPT = null; // set by the entry point; used to spawn the superviso
 export function setScript(p) {
   SCRIPT = p;
 }
-const sb = () => `node "${SCRIPT}"`;
+const sb = () => (CLI_ON_PATH ? CLI : `node "${SCRIPT}"`);
 
 // ------------------------------------------------------------------ records
 
@@ -72,7 +73,7 @@ export function loadJob(id) {
     const again = readJSON(path.join(jobDir(id), "state.json"), {});
     job.state = TERMINAL.has(again.status) ? again : { ...again, status: "lost", error: "supervisor process is gone" };
     if (job.state.status === "lost" && agentAlive(job))
-      job.state.error = `supervisor process is gone but the agent (pid ${job.state.agentPid}) is still running; stop it with: switchboard cancel ${job.id}`;
+      job.state.error = `supervisor process is gone but the agent (pid ${job.state.agentPid}) is still running; stop it with: ${CLI} cancel ${job.id}`;
   }
   return job;
 }
@@ -194,7 +195,7 @@ function pickAgent(o, fallback) {
   let name = o.agent;
   if (!name && o._.length && getAgent(o._[0])) name = o._.shift();
   name ||= fallback;
-  if (!name) die(`which agent? Start with one of: ${agentNames().join(", ")} (e.g. switchboard run codex "<task>")`);
+  if (!name) die(`which agent? Start with one of: ${agentNames().join(", ")} (e.g. ${CLI} run codex "<task>")`);
   const a = getAgent(name);
   if (!a) die(`unknown agent "${name}"; one of: ${agentNames().join(", ")}`);
   return a;
@@ -613,7 +614,7 @@ function statusLine(j, now = Date.now()) {
   const end = s.endedAt || now;
   const elapsed = s.startedAt ? fmtDuration(end - s.startedAt) : "-";
   const idle = !TERMINAL.has(s.status) && s.lastEventAt ? ` idle ${fmtDuration(now - s.lastEventAt)}` : "";
-  return `${j.id}  ${s.status.padEnd(9)} ${j.agent.padEnd(8)} ${j.mode.padEnd(5)} ${elapsed.padStart(7)}${idle}  tools=${s.toolCalls ?? 0}  ${oneLine(j.name, 44)}\n    ${oneLine(s.lastActivity || "", 110)}`;
+  return `${bold(j.id)}  ${paintStatus(s.status.padEnd(9))} ${j.agent.padEnd(8)} ${j.mode.padEnd(5)} ${elapsed.padStart(7)}${idle}  tools=${s.toolCalls ?? 0}  ${oneLine(j.name, 44)}\n    ${dim(oneLine(s.lastActivity || "", 110))}`;
 }
 
 export function cmdStatus(argv) {
@@ -655,7 +656,7 @@ export async function cmdWait(argv) {
     for (const j of finished) {
       if (seen[j.id]) continue;
       seen[j.id] = true;
-      console.log(`[${clock(Date.now())}] ${j.id} ${j.state.status} after ${fmtDuration((j.state.endedAt || Date.now()) - j.state.startedAt)} (tools=${j.state.toolCalls ?? 0})`);
+      console.log(`[${clock(Date.now())}] ${j.id} ${paintStatus(j.state.status)} after ${fmtDuration((j.state.endedAt || Date.now()) - j.state.startedAt)} (tools=${j.state.toolCalls ?? 0})`);
     }
     if (o.any ? finished.length > 0 : finished.length === states.length) {
       console.log(`\nFinished: ${finished.map((j) => `${j.id}=${j.state.status}${j.state.errorKind ? ` (${j.state.errorKind})` : ""}`).join(", ")}`);
@@ -810,7 +811,7 @@ export async function cmdCancel(argv) {
 
 export function cmdResume(argv) {
   const [ref, ...rest] = argv;
-  if (!ref) die("usage: resume <job> <follow-up instructions>");
+  if (!ref) usage("usage: resume <job> <follow-up instructions>");
   return cmdRun(["--resume", ref, ...rest]);
 }
 

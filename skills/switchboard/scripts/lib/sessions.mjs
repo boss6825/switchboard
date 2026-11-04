@@ -6,7 +6,8 @@ import path from "node:path";
 import { agent as getAgent, allAgents } from "./agents/index.mjs";
 import { repoRoot, workspaceState } from "./git.mjs";
 import { isUnder } from "./agents/common.mjs";
-import { die, parseArgs, readText, oneLine, clip, stamp, ago, tilde, table, exists, canon } from "./util.mjs";
+import { cyan, dim } from "./ui.mjs";
+import { die, usage, parseArgs, readText, oneLine, clip, stamp, ago, tilde, table, exists, canon, CLI } from "./util.mjs";
 
 const LIST_SPEC = { agent: "value", all: "bool", cwd: "value", limit: "value", json: "bool", archived: "bool", subagents: "bool" };
 
@@ -91,10 +92,10 @@ export async function cmdSessions(argv) {
   list = list.slice(0, Number(o.limit || 15));
   if (o.json) return console.log(JSON.stringify(list, null, 2));
   for (const e of errors) console.log(`(could not read ${e})`);
-  if (!list.length) return console.log("No chats found. Run `switchboard doctor` to see which agents and stores were detected.");
+  if (!list.length) return console.log(`No chats found. Run ${CLI} doctor to see which agents and stores were detected.`);
   console.log(scoped ? `Chats in ${tilde(dir)} (newest first; --all for every folder):\n` : `Chats in every folder (newest first${o.all ? "" : `; none are in ${tilde(dir)}`}):\n`);
-  console.log(table(listRows(list), ["ref", "where", "updated", "title", "folder"]));
-  console.log(`\nRead one: switchboard sessions show <ref>     Continue one: switchboard handoff <ref>`);
+  console.log(table(listRows(list), ["ref", "where", "updated", "title", "folder"], { paint: (c, i) => (i === 0 ? cyan(c) : i === 2 || i === 4 ? dim(c) : c) }));
+  console.log(`\nRead one: ${CLI} sessions show <ref>     Continue one: ${CLI} handoff <ref>`);
 }
 
 // <agent>:<id-prefix> | <agent>:last | <id-prefix> | <words in the title>
@@ -120,7 +121,7 @@ export async function resolveSession(refStr, { cwd = process.cwd() } = {}) {
   const byTitle = pool.filter((s) => words.every((w) => (s.title || "").toLowerCase().includes(w)));
   if (byTitle.length === 1) return byTitle[0];
   if (byTitle.length > 1) die(`"${refStr}" matches several chat titles; pick one by ref:\n${table(listRows(byTitle.slice(0, 10)), ["ref", "where", "updated", "title", "folder"])}`);
-  die(`no chat matches "${refStr}". Try: switchboard sessions search "${key}"`);
+  die(`no chat matches "${refStr}". Try: ${CLI} sessions search "${key}"`);
 }
 
 async function load(meta) {
@@ -133,7 +134,7 @@ async function load(meta) {
 async function cmdSearch(argv) {
   const o = parseArgs(argv, { ...LIST_SPEC, here: "bool", regex: "bool" });
   const q = o._.join(" ").trim();
-  if (!q) die('usage: switchboard sessions search "<text>" [--agent codex] [--here]');
+  if (!q) usage(`usage: ${CLI} sessions search "<text>" [--agent codex] [--here]`);
   const re = o.regex ? new RegExp(q, "i") : null;
   const needle = q.toLowerCase();
   const hit = (t) => (re ? re.test(t) : String(t).toLowerCase().includes(needle));
@@ -359,7 +360,7 @@ You are picking up work that ${a.label} started. Everything under "What the user
   }
   const cut = tail.length < ev.filter((e) => e.type !== "reasoning").length;
   parts.push(`## Recent conversation${cut ? " (most recent part)" : ""}\n${tail.join("\n")}`);
-  parts.push(`## More detail\n- Full transcript: switchboard sessions show ${ref(s)} --full --outputs\n- Search inside it: switchboard sessions search "<text>" --agent ${s.agent}${s.file ? `\n- Raw file: ${s.file}` : ""}\n- ${a.label} can resume it natively: ${a.takeover(s.id)}`);
+  parts.push(`## More detail\n- Full transcript: ${CLI} sessions show ${ref(s)} --full --outputs\n- Search inside it: ${CLI} sessions search "<text>" --agent ${s.agent}${s.file ? `\n- Raw file: ${s.file}` : ""}\n- ${a.label} can resume it natively: ${a.takeover(s.id)}`);
 
   const text = parts.join("\n\n");
   if (o.json) return console.log(JSON.stringify({ session: { ...s, events: undefined }, handoff: text }, null, 2));

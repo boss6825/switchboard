@@ -7,7 +7,7 @@
     {
       "name": "switchboard",
       "description": "Continue another agent's chat (Claude Code, Codex, Cursor, OpenCode) and delegate work to them as background sub-agents under your model policy.",
-      "version": "0.1.0",
+      "version": "0.1.1",
       "source": "./",
       "category": "development"
     }

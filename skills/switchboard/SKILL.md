@@ -6,11 +6,12 @@ description: Work with the other coding agents on this machine (Claude Code, Cod
 # Switchboard
 
 One command-line tool, `scripts/switchboard.mjs` in the same folder as this file. In the
-commands below, `sb` means `node "<this skill's folder>/scripts/switchboard.mjs"`. If a
-`switchboard` command is on PATH, that is the same tool.
+commands below, `sb` means `sw` if that command is on PATH (check once with `command -v sw`),
+else `switchboard`, else `node "<this skill's folder>/scripts/switchboard.mjs"`. All three are
+the same tool; use the shortest that works.
 
 ```bash
-sb --help
+sb help --all        # every command and option; sb <command> --help for one
 ```
 
 ## Continue another agent's chat

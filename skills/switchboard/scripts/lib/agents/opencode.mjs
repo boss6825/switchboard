@@ -9,7 +9,7 @@
 
 import fs from "node:fs";
 import path from "node:path";
-import { home, which, run, readJSON, writeJSON, walk, toMs, cmpVersion, globRe, oneLine, stripAnsi, die, exists } from "../util.mjs";
+import { home, which, run, readJSON, writeJSON, walk, toMs, cmpVersion, globRe, oneLine, stripAnsi, die, exists, CLI } from "../util.mjs";
 import { SB_HOME, policyFor } from "../config.mjs";
 import { query, tables } from "../sqlite.mjs";
 import { describeTool, desktopApp, isUnder } from "./common.mjs";
@@ -214,7 +214,7 @@ const adapter = {
   // OpenCode Zen's free models end in "-free"; which ones exist rotates, so
   // read the live list (cached 6 hours) instead of keeping our own.
   included: {
-    check: (id) => (/-free$/.test(id) ? null : "is not one of OpenCode's free models (their ids end in -free; see: switchboard models opencode)"),
+    check: (id) => (/-free$/.test(id) ? null : `is not one of OpenCode's free models (their ids end in -free; see: ${CLI} models opencode)`),
     defaultModel(notes) {
       const free = fetchModels().filter((id) => /-free$/.test(id));
       if (!free.length) die("no free OpenCode models are listed right now (opencode models shows none ending in -free)");
@@ -226,12 +226,12 @@ const adapter = {
     const ids = fetchModels();
     if (/:latest$/.test(want)) {
       const id = newestMatching(want, ids);
-      if (!id) die(`no OpenCode model matches "${want}" (see: switchboard models opencode)`);
+      if (!id) die(`no OpenCode model matches "${want}" (see: ${CLI} models opencode)`);
       notes.push(`${want} resolves to ${id} today.`);
       return { id, effort };
     }
     if (!want.includes("/")) die(`OpenCode models are named provider/model (e.g. opencode/some-model); got "${want}"`);
-    if (ids.length && !ids.includes(want)) die(`"${want}" is not in \`opencode models\` (see: switchboard models opencode ${want.split("/")[0]})`);
+    if (ids.length && !ids.includes(want)) die(`"${want}" is not in \`opencode models\` (see: ${CLI} models opencode ${want.split("/")[0]})`);
     return { id: want, effort };
   },
   // Full provider/model only: "claude-sonnet-5-5" must not also allow some-other-provider/claude-sonnet-5-5.

@@ -8,7 +8,8 @@ import { fileURLToPath } from "node:url";
 import { allAgents, agent as getAgent } from "./agents/index.mjs";
 import { describePolicy } from "./policy.mjs";
 import { SB_HOME, VERSION, SPEND, loadConfig, setSpend } from "./config.mjs";
-import { home, exists, isDir, tilde, parseArgs, readJSON, writeJSON, die, table } from "./util.mjs";
+import { home, which, realPath, exists, isDir, tilde, parseArgs, readJSON, writeJSON, die, table, CLI } from "./util.mjs";
+import { dim, status as paintStatus } from "./ui.mjs";
 
 const SKILL = "switchboard";
 const MARKER = ".switchboard-install.json";
@@ -98,6 +99,7 @@ export function cmdDoctor(argv) {
         r.skill.length ? r.skill.map(tilde).join(", ") : "-",
       ]),
       ["Agent", "CLI", "CLI login", "Desktop app", "Chats on disk", "Switchboard skill"],
+      { paint: (c, i) => (i === 1 && c.startsWith("not installed") ? dim(c) : i === 2 || i === 3 ? paintStatus(c) : c) },
     ),
   );
 
@@ -108,7 +110,7 @@ export function cmdDoctor(argv) {
     if (!r.bin) todo.push(`${r.label}: ${r.desktop ? "the desktop app is installed but the CLI is not. " : ""}Switchboard drives agents through their CLI. Install it: ${a.installHint}`);
     else if (r.login.ok === false) todo.push(`${r.label}: ${r.login.detail} Log in: ${a.loginHint}`);
     else if (r.login.ok === null && r.login.detail !== "-") todo.push(`${r.label}: login state unclear (${r.login.detail}).`);
-    if (r.present && !r.skill.length) todo.push(`${r.label}: Switchboard skill not installed where ${r.label} looks. Run: switchboard install`);
+    if (r.present && !r.skill.length) todo.push(`${r.label}: Switchboard skill not installed where ${r.label} looks. Run: ${CLI} install`);
   }
   const absent = rows.filter((r) => !r.present).map((r) => r.label);
   console.log("");
@@ -118,7 +120,7 @@ export function cmdDoctor(argv) {
 
   console.log(`\nWhere chats live (one store per agent, shared by its CLI and desktop app):`);
   for (const r of rows) for (const s of r.stores) if (s.count) console.log(`- ${r.label}: ${s.label} — ${tilde(s.path)}`);
-  console.log(`\nSub-agent model policy (change with: switchboard policy set <agent> <key> <value>):`);
+  console.log(`\nSub-agent model policy (change with: ${CLI} policy set <agent> <key> <value>):`);
   for (const a of allAgents()) console.log(`- ${a.label}: ${describePolicy(a)}`);
   process.exitCode = rows.some((r) => r.present && (!r.bin || r.login.ok === false)) ? 1 : 0;
 }
@@ -187,6 +189,17 @@ function askSpend() {
   return buf.toString("utf8", 0, n).trim() === "2" ? "any" : "included";
 }
 
+// Commands linked into ~/.local/bin: the full name and the short one.
+const SHIMS = ["switchboard", "sw"];
+
+function isOurShim(p) {
+  try {
+    return fs.lstatSync(p).isSymbolicLink() && fs.readlinkSync(p).includes(path.join(".switchboard", "app"));
+  } catch {
+    return false;
+  }
+}
+
 export function cmdInstall(argv) {
   const o = parseArgs(argv, { agents: "value", "dry-run": "bool", force: "bool", "no-shim": "bool", spend: "value" });
   if (o.spend && !SPEND.includes(o.spend)) die(`--spend must be one of: ${SPEND.join(", ")}`);
@@ -197,14 +210,14 @@ export function cmdInstall(argv) {
   const src = skillSource();
   const app = path.join(SB_HOME, "app");
   const shimDir = home(".local", "bin");
-  const shim = path.join(shimDir, "switchboard");
+  const target = path.join(app, "scripts", "switchboard.mjs");
 
   console.log(`Found: ${want.map((r) => `${r.label}${r.bin ? "" : " (no CLI)"}`).join(", ")}`);
   console.log(`Installing the "${SKILL}" skill ${VERSION}:`);
   for (const [dir, agents] of targets) console.log(`- ${tilde(path.join(dir, SKILL))}  (read by ${[...new Set(agents)].map((n) => getAgent(n).label).join(", ")})`);
   console.log(`- ${tilde(app)}  (the command-line tool itself)`);
   const linkShim = !o["no-shim"] && (onPath(shimDir) || isDir(shimDir));
-  if (linkShim) console.log(`- ${tilde(shim)} -> ${tilde(path.join(app, "scripts", "switchboard.mjs"))}`);
+  if (linkShim) for (const name of SHIMS) console.log(`- ${tilde(path.join(shimDir, name))} -> ${tilde(target)}`);
 
   const blocked = [...targets.keys()].map((d) => path.join(d, SKILL)).filter((d) => !ownedOrAbsent(d));
   if (blocked.length && !o.force) die(`these folders exist and were not created by Switchboard; not touching them (use --force to replace):\n${blocked.map((b) => `  ${b}`).join("\n")}`);
@@ -212,7 +225,7 @@ export function cmdInstall(argv) {
   // has no terminal, so it passes --spend after asking the user in chat.
   const prior = loadConfig().spend;
   const spend = o.spend || (SPEND.includes(prior) ? prior : askSpend()) || "included";
-  const spendNote = o.spend || SPEND.includes(prior) ? null : process.stdin.isTTY ? null : "No terminal to ask in, so sub-agents use free and plan-included models only. To allow paid models: switchboard policy spend any";
+  const spendNote = o.spend || SPEND.includes(prior) ? null : process.stdin.isTTY ? null : `No terminal to ask in, so sub-agents use free and plan-included models only. To allow paid models: ${CLI} policy spend any`;
   if (o["dry-run"]) return console.log(`\nSub-agent spending: ${spend}\n(dry run: nothing written)`);
 
   // Stage a copy first: when this runs from an installed copy, `src` is one of
@@ -226,29 +239,44 @@ export function cmdInstall(argv) {
   } finally {
     fs.rmSync(stage, { recursive: true, force: true });
   }
-  let shimNote = null;
+  const shimNotes = [];
+  const shims = [];
   if (linkShim) {
     fs.mkdirSync(shimDir, { recursive: true });
-    let cur = null;
-    try {
-      cur = fs.lstatSync(shim);
-    } catch {}
-    if (cur && (cur.isSymbolicLink() || o.force)) fs.rmSync(shim);
-    else if (cur) shimNote = `${tilde(shim)} already exists and is not a link Switchboard made; left it alone (--force replaces it).`;
-    if (!exists(shim) && !shimNote) fs.symlinkSync(path.join(app, "scripts", "switchboard.mjs"), shim);
+    for (const name of SHIMS) {
+      const shim = path.join(shimDir, name);
+      let cur = null;
+      try {
+        cur = fs.lstatSync(shim);
+      } catch {}
+      // `switchboard` replaces any old link (earlier installs made it); the short
+      // `sw` is a common name, so it replaces only a link Switchboard made.
+      const ours = cur?.isSymbolicLink() && (name === "switchboard" || isOurShim(shim));
+      // Only the short name can clash with someone else's tool. A Switchboard copy on
+      // PATH (npx puts its own temporary one there while running this) is not a clash.
+      const found = name === "sw" && !cur ? which(name) : null;
+      const other = found && path.basename(realPath(found)) !== "switchboard.mjs" ? found : null;
+      if (cur && (ours || o.force)) fs.rmSync(shim);
+      else if (cur) shimNotes.push(`${tilde(shim)} already exists and is not a link Switchboard made; left it alone (--force replaces it).`);
+      else if (other && !o.force) shimNotes.push(`another ${name} command is on your PATH (${tilde(other)}); did not add ${tilde(shim)} (--force adds it).`);
+      if (!exists(shim) && !shimNotes.some((n) => n.includes(tilde(shim)))) {
+        fs.symlinkSync(target, shim);
+        shims.push(shim);
+      }
+    }
   }
   if (spend !== prior) setSpend(spend);
-  writeJSON(path.join(SB_HOME, "install.json"), { version: VERSION, at: new Date().toISOString(), targets: [...targets.keys()].map((d) => path.join(d, SKILL)), shim: linkShim ? shim : null });
+  writeJSON(path.join(SB_HOME, "install.json"), { version: VERSION, at: new Date().toISOString(), targets: [...targets.keys()].map((d) => path.join(d, SKILL)), shims });
 
   console.log("\nDone.");
-  console.log(`- Sub-agent spending: ${spend === "included" ? "free and plan-included models only (OpenCode free models, Cursor Grok without -fast, Codex at standard speed, Antigravity without AI credits)" : "any model, including ones billed at API prices"}. Change: switchboard policy spend included|any`);
+  console.log(`- Sub-agent spending: ${spend === "included" ? "free and plan-included models only (OpenCode free models, Cursor Grok without -fast, Codex at standard speed, Antigravity without AI credits)" : "any model, including ones billed at API prices"}. Change: ${CLI} policy spend included|any`);
   if (spendNote) console.log(`- ${spendNote}`);
-  if (shimNote) console.log(`- ${shimNote}`);
+  for (const n of shimNotes) console.log(`- ${n}`);
   const missingCli = want.filter((r) => !r.bin);
   for (const r of missingCli) console.log(`- ${r.label}: no CLI found, so other agents cannot delegate to it or check its login. Install: ${getAgent(r.agent).installHint}`);
-  if (linkShim && !onPath(shimDir)) console.log(`- ${tilde(shimDir)} is not on your PATH; add it, or run: node ${tilde(path.join(app, "scripts", "switchboard.mjs"))}`);
+  if (linkShim && !onPath(shimDir)) console.log(`- ${tilde(shimDir)} is not on your PATH; add it, or run: node ${tilde(target)}`);
   console.log(`- Restart open agent sessions so they load the new skill.`);
-  console.log(`- Next: switchboard doctor   (checks each CLI's login and shows the model policy)`);
+  console.log(`- Next: ${CLI} doctor   (checks each CLI's login and shows the model policy)`);
 }
 
 export function cmdUninstall(argv) {
@@ -263,13 +291,14 @@ export function cmdUninstall(argv) {
       n++;
     }
   }
-  const shim = rec.shim || home(".local", "bin", "switchboard");
-  try {
-    if (fs.lstatSync(shim).isSymbolicLink() && fs.readlinkSync(shim).includes(path.join(".switchboard", "app"))) {
+  // rec.shim: installs before the short `sw` command recorded a single link.
+  const shims = new Set([...(rec.shims || []), ...(rec.shim ? [rec.shim] : []), ...SHIMS.map((n) => home(".local", "bin", n))]);
+  for (const shim of shims) {
+    if (isOurShim(shim)) {
       fs.rmSync(shim);
       console.log(`removed ${tilde(shim)}`);
     }
-  } catch {}
+  }
   if (o.purge) {
     fs.rmSync(SB_HOME, { recursive: true, force: true });
     console.log(`removed ${tilde(SB_HOME)} (config, job records)`);

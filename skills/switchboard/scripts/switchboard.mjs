@@ -8,58 +8,17 @@
 
 import fs from "node:fs";
 import { fileURLToPath } from "node:url";
-import { VERSION, SB_HOME, JOBS, POLICY_KEYS, SPEND, loadConfig, setPolicy, unsetPolicy, setReadOnly, setSpend } from "./lib/config.mjs";
+import { VERSION, JOBS, POLICY_KEYS, SPEND, loadConfig, setPolicy, unsetPolicy, setReadOnly, setSpend } from "./lib/config.mjs";
 import { describePolicy } from "./lib/policy.mjs";
 import { agent as getAgent, allAgents, agentNames } from "./lib/agents/index.mjs";
-import { SbError, die, parseArgs } from "./lib/util.mjs";
+import { SbError, UsageError, die, usage, parseArgs, CLI } from "./lib/util.mjs";
+import { overview, commandHelp, fullHelp, canonical, suggest } from "./lib/help.mjs";
+import { red } from "./lib/ui.mjs";
 import * as jobs from "./lib/jobs.mjs";
 import { cmdSessions, cmdHandoff } from "./lib/sessions.mjs";
 import { cmdDoctor, cmdInstall, cmdUninstall } from "./lib/install.mjs";
 
 jobs.setScript(fs.realpathSync(fileURLToPath(import.meta.url)));
-
-const HELP = `switchboard ${VERSION} — your coding agents, working as one team
-
-Read other agents' chats (and continue them):
-  sessions [--agent codex] [--all] [--limit N]     Recent chats, this folder first
-  sessions search "<text>" [--agent a] [--here]    Find chats that mention something
-  sessions show <ref> [--full] [--outputs] [--last N]   Read one chat
-  handoff <ref> [--budget 40000] [--out file]      Brief for continuing a chat: what was
-                                                   asked, where it stopped, what it changed,
-                                                   and the workspace as it is now
-  <ref> is agent:last, agent:<id-prefix>, or words from the title (e.g. codex:last)
-
-Use another agent as a sub-agent (background jobs):
-  run <agent> [options] <task>     Start a job; task from args, --prompt-file, or stdin
-      --mode write|ask             write (default) may edit files and run commands; ask is read-only
-      --model <id>                 Only if the user's policy lets you choose (see: policy)
-      --effort <level>             low|medium|high|xhigh|max (what the agent supports)
-      --worktree                   Run in a fresh git worktree (safe for parallel writers)
-      --wait                       Block until done (up to --wait-timeout secs, default 540)
-      --timeout <secs>             Stop the job after this long (default 1800)
-      --raw                        Send the task without the standard sub-agent rules (advanced)
-  review <agent> [--base <ref>] [focus]   Read-only adversarial review of the current diff
-  resume <job> <follow-up>         Continue a finished job's session
-  status [job] [--all] · wait [job...] [--any] · tail <job> [-f] · result [job...] · cancel <job>|--all
-  models <agent> [filter] [--refresh]     Models the agent offers on your plan
-  cleanup [--days N]               Delete old job records
-
-Model policy (what sub-agents may run):
-  policy                           Show every agent's policy
-  policy set <agent> <key> <value...>   keys: ${Object.keys(POLICY_KEYS).join(", ")}
-  policy unset <agent> <key>
-  policy spend included|any        included: only free or plan-included models (the install default)
-  Examples:  policy set cursor model grok:latest      (always the newest Grok)
-             policy set cursor chooseModel false       (orchestrator picks effort only)
-             policy set claude allow sonnet haiku      (never Opus as a sub-agent)
-             policy set cursor deny "*-fast"
-
-Setup:
-  doctor [--json]                  Which agents are installed, logged in, and where their chats are
-  install [--agents a,b] [--spend included|any] [--dry-run]   Install the skill for every agent found on this machine
-  uninstall [--purge]
-
-Agents: ${agentNames().join(", ")}   ·   State: ${SB_HOME}`;
 
 function cmdPolicy(argv) {
   const [action, name, key, ...values] = argv;
@@ -70,7 +29,7 @@ function cmdPolicy(argv) {
     return;
   }
   if (action === "spend") {
-    if (!SPEND.includes(name)) die(`usage: policy spend ${SPEND.join("|")}`);
+    if (!SPEND.includes(name)) usage(`usage: policy spend ${SPEND.join("|")}`);
     setSpend(name);
     for (const a of allAgents()) console.log(`${a.label.padEnd(12)} ${describePolicy(a)}`);
     return;
@@ -78,17 +37,17 @@ function cmdPolicy(argv) {
   const a = getAgent(name) || die(`unknown agent "${name}"; one of: ${agentNames().join(", ")}`);
   if (!POLICY_KEYS[key]) die(`policy key must be one of: ${Object.keys(POLICY_KEYS).join(", ")}`);
   if (action === "set") {
-    if (!values.length) die(`usage: policy set ${a.name} ${key} <value>`);
+    if (!values.length) usage(`usage: policy set ${a.name} ${key} <value>`);
     if (key === "effort" && a.efforts && !a.efforts.includes(values[0])) die(`${a.label} effort must be one of ${a.efforts.join(", ")}`);
     setPolicy(a.name, key, values);
   } else if (action === "unset") unsetPolicy(a.name, key);
-  else die("usage: policy [show] | policy set <agent> <key> <value...> | policy unset <agent> <key>");
+  else usage("usage: policy [show] | policy set <agent> <key> <value...> | policy unset <agent> <key>");
   console.log(`${a.label}: ${describePolicy(a)}`);
 }
 
 function cmdModels(argv) {
   const o = parseArgs(argv, { refresh: "bool" });
-  const a = getAgent(o._.shift()) || die(`usage: models <agent> [filter]; agents: ${agentNames().join(", ")}`);
+  const a = getAgent(o._.shift()) || usage(`usage: models <agent> [filter]; agents: ${agentNames().join(", ")}`);
   const filter = o._.join(" ").toLowerCase();
   const ids = a.listModels({ refresh: !!o.refresh });
   if (!ids.length) return console.log(`${a.label} did not report a model list.`);
@@ -118,11 +77,32 @@ const COMMANDS = {
   __supervise: jobs.cmdSupervise,
 };
 
+// --help / -h anywhere before a "--" asks for help (a task text is one argument, so it rarely collides).
+const wantsHelp = (argv) => {
+  const end = argv.indexOf("--");
+  return (end < 0 ? argv : argv.slice(0, end)).some((a) => a === "--help" || a === "-h");
+};
+
+function cmdHelp(argv) {
+  if (argv.includes("--all")) return console.log(fullHelp());
+  if (!argv[0]) return console.log(overview());
+  const name = canonical(argv[0]);
+  if (!name) unknownCommand(argv[0]);
+  console.log(commandHelp(name));
+}
+
+function unknownCommand(input) {
+  const near = suggest(input);
+  throw new UsageError(`unknown command "${input}"${near ? `. Did you mean "${near}"?` : ""}\nRun: ${CLI} --help`);
+}
+
 const [cmd, ...rest] = process.argv.slice(2);
 try {
-  if (!cmd || cmd === "help" || cmd === "--help" || cmd === "-h") console.log(HELP);
-  else if (cmd === "--version" || cmd === "version") console.log(VERSION);
-  else if (!COMMANDS[cmd]) die(`unknown command "${cmd}". Run: switchboard --help`);
+  if (!cmd || cmd === "--help" || cmd === "-h") cmdHelp(rest);
+  else if (cmd === "help") cmdHelp(rest);
+  else if (cmd === "--version" || cmd === "-v" || cmd === "-V" || cmd === "version") console.log(VERSION);
+  else if (!COMMANDS[cmd]) unknownCommand(cmd);
+  else if (cmd !== "__supervise" && wantsHelp(rest)) console.log(commandHelp(canonical(cmd)));
   else {
     // A dry run promises to write nothing, Switchboard's own state included.
     if (cmd === "install" && rest.includes("--dry-run")) setReadOnly();
@@ -131,8 +111,10 @@ try {
   }
 } catch (e) {
   if (e instanceof SbError) {
-    process.stderr.write(`switchboard: ${e.message}\n`);
-    process.exit(1);
+    const name = canonical(cmd);
+    const hint = e instanceof UsageError && name && !e.message.includes("--help") ? `\nRun: ${CLI} ${name} --help` : "";
+    process.stderr.write(`${red("switchboard:", process.stderr)} ${e.message}${hint}\n`);
+    process.exit(e instanceof UsageError ? 2 : 1);
   }
   throw e;
 }
