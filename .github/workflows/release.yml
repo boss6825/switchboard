@@ -1,0 +1,163 @@
+# Publish switchboard-pro when a finished change reaches main.
+#
+# Tests run on every pull request and every push. A new npm version is published
+# only from main, and only when scripts/release-plan.mjs says the commits ask
+# for one (feat:, fix:, perf:, or [release]). A README-only push stays on the
+# current version. Running this workflow by hand can force patch, minor, or major.
+#
+# npm publish from this file uses GitHub's short-lived OIDC token, so there is
+# no npm token in the repo and no authenticator prompt on later releases.
+# That trust is created once, from a laptop that is already logged in to npm:
+#
+#   npm trust github switchboard-pro --file release.yml --repository boss6825/switchboard --allow-publish
+#
+# The filename above has to stay release.yml. The first publish has to succeed
+# within two days of that command or npm expires the trust and it must be created again.
+#
+# The same run also publishes @boss6825/switchboard-pro to GitHub Packages, which
+# is the copy that shows on this repository's Packages list. Installs stay on
+# the public npm package switchboard-pro.
+
+name: Release
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      level:
+        description: auto follows commit messages. patch, minor, or major publishes even when they do not.
+        type: choice
+        default: auto
+        options:
+          - auto
+          - patch
+          - minor
+          - major
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+          package-manager-cache: false
+      - run: npm test
+
+  release:
+    needs: test
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      id-token: write
+      packages: write
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+          package-manager-cache: false
+
+      - id: plan
+        env:
+          RELEASE_LEVEL: ${{ inputs.level || 'auto' }}
+        run: node scripts/release-plan.mjs --level "$RELEASE_LEVEL"
+
+      - name: Mark the version already on npm
+        if: steps.plan.outputs.baseline == 'true'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag -a "v${{ steps.plan.outputs.version }}" -m "Switchboard ${{ steps.plan.outputs.version }}, the version already on npm"
+          git push origin "v${{ steps.plan.outputs.version }}"
+
+      - name: Publish npm and GitHub Packages
+        if: steps.plan.outputs.release == 'true'
+        env:
+          NEXT: ${{ steps.plan.outputs.next }}
+          NOTES: ${{ steps.plan.outputs.notes }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          npm install -g npm@11.19.0
+          node scripts/release-plan.mjs --apply "$NEXT"
+          npm test
+
+          if npm view "switchboard-pro@${NEXT}" version >/dev/null 2>&1; then
+            echo "npm already has switchboard-pro@${NEXT}"
+          else
+            set +e
+            log=$(npm publish --access public 2>&1)
+            code=$?
+            set -e
+            printf '%s\n' "$log"
+            if [ "$code" -ne 0 ]; then
+              if printf '%s\n' "$log" | grep -Eqi "ENEEDAUTH|Unable to authenticate|trusted publisher"; then
+                echo "npm refused the publish. On your machine, once, run:"
+                echo "  npm trust github switchboard-pro --file release.yml --repository boss6825/switchboard --allow-publish"
+                echo "Approve the authenticator prompt. The first successful publish has to happen within two days."
+              fi
+              exit "$code"
+            fi
+          fi
+
+          pack="$RUNNER_TEMP/pack"
+          stage="$RUNNER_TEMP/github-package"
+          mkdir -p "$pack" "$stage"
+          npm pack --pack-destination "$pack"
+          tar -xzf "$pack"/*.tgz -C "$stage"
+          node --input-type=module -e '
+            import fs from "node:fs";
+            import { githubPackageJson } from "./scripts/release-plan.mjs";
+            const file = process.argv[1];
+            const pkg = githubPackageJson(JSON.parse(fs.readFileSync(file, "utf8")));
+            fs.writeFileSync(file, JSON.stringify(pkg, null, 2) + "\n");
+          ' "$stage/package/package.json"
+          npmrc="$RUNNER_TEMP/github.npmrc"
+          printf '//npm.pkg.github.com/:_authToken=%s\n@boss6825:registry=https://npm.pkg.github.com\n' "$GITHUB_TOKEN" > "$npmrc"
+          set +e
+          log=$(npm publish --userconfig "$npmrc" --registry https://npm.pkg.github.com --access public "$stage/package" 2>&1)
+          code=$?
+          set -e
+          printf '%s\n' "$log"
+          if [ "$code" -ne 0 ] && ! printf '%s\n' "$log" | grep -Eqi "previously published|EPUBLISHCONFLICT|cannot publish over"; then
+            exit "$code"
+          fi
+
+          # A package linked to this public repo usually inherits public visibility.
+          # If it is still private, the release still ships; the package page is where it gets switched.
+          set +e
+          gh api --method PUT /user/packages/npm/switchboard-pro/visibility -f visibility=public
+          vis_code=$?
+          set -e
+          if [ "$vis_code" -ne 0 ]; then
+            visibility=$(gh api /user/packages/npm/switchboard-pro --jq .visibility 2>/dev/null || true)
+            if [ "$visibility" != "public" ]; then
+              echo "::warning::@boss6825/switchboard-pro published, but its visibility is ${visibility:-unknown}. Set it to public on the package page so everyone can see it on the repository."
+            fi
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add package.json skills/switchboard/scripts/lib/config.mjs .claude-plugin/plugin.json .claude-plugin/marketplace.json
+          git commit -m "Release ${NEXT} [skip ci]"
+          git fetch origin main
+          git rebase origin/main
+          git tag -a "v${NEXT}" -m "Release ${NEXT}"
+          git push origin HEAD:main
+          git push origin "v${NEXT}"
+          printf '%s\n' "$NOTES" > "$RUNNER_TEMP/notes.md"
+          gh release create "v${NEXT}" --title "${NEXT}" --notes-file "$RUNNER_TEMP/notes.md"
