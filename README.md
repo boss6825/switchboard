@@ -107,6 +107,7 @@ You don't need to remember commands. Talk to your agent:
 - *"Search my old chats for the Stripe webhook fix."*
 - *"Have Cursor write the tests for this module while you work on the migration."*
 - *"Get a second opinion on this diff from Codex."*
+- *"Ask GrokBot what the AI news on X is today."* (see [Grok Bot](#grok-bot))
 
 The skill tells the agent which `switchboard` command to run. The same commands work in a terminal.
 
@@ -122,6 +123,7 @@ The skill tells the agent which `switchboard` command to run. The same commands 
 | `switchboard run <agent> <task>` | Start a background sub-agent job (`--mode ask` read-only, `--worktree`, `--effort`) |
 | `switchboard review <agent>` | Read-only adversarial review of your diff by another agent |
 | `switchboard status` / `wait` / `tail` / `result` / `resume` / `cancel` | Watch and manage jobs |
+| `switchboard grokbot send "<task>"` | Hand a task to your Grok Bot routine and wait for the answer (`wait`, `setup`, `status`, `instructions`) |
 | `switchboard policy` | Which models each agent may run as a sub-agent |
 | `switchboard doctor` / `install` / `uninstall` | Setup |
 
@@ -299,6 +301,22 @@ OpenCode support is built from OpenCode's documentation and source (`run --forma
 - `doctor` checks that each CLI is logged in. Quota and remaining credit are outside that check.
 - Changes are measured with `git status`, so ignored files stay out of that list. Edits the agent reported on ignored files are listed separately.
 - A job takes a few seconds (Codex, Claude) to about 45 seconds (Cursor) to start.
+
+</details>
+
+<details id="grok-bot">
+<summary>Grok Bot</summary>
+
+[Grok Bot](https://docs.x.ai/grok-bot/overview) runs on xAI's cloud computer and has no official CLI, so Switchboard reaches it through a routine's webhook. Say *"ask GrokBot …"* to any agent; it runs `sw grokbot send`, Grok Bot does the task (it searches X itself, with no X API bill), runs `sw grokbot reply` on your Mac with the answer, and the agent gets it back as JSON.
+
+One-time setup:
+
+1. In Grok Bot, ask a Bot to create a routine with a webhook trigger.
+2. `sw grokbot setup` saves the routine's URL, key (hidden input) and header name to the macOS Keychain.
+3. `sw grokbot instructions` copies the routine text, with this machine's paths filled in. Paste it as the routine's instruction.
+4. Turn on "Execution on this computer" for your Mac in Grok Bot settings, so the Bot can deliver the reply.
+
+`sw grokbot status` shows what is set without printing it. Why the webhook and not the community Grok Bot CLIs: [docs/architecture.md](docs/architecture.md).
 
 </details>
 
