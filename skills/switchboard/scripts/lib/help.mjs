@@ -218,6 +218,51 @@ export const COMMANDS = {
       ['policy set cursor deny "*-fast"'],
     ],
   },
+  grokbot: {
+    group: "remote",
+    aliases: ["grok"],
+    summary: "Hand a task to your Grok Bot through its webhook and wait for the answer",
+    usage: [
+      'grokbot send "<task>" [--context "<text>"] [--timeout <secs>] [--no-wait]',
+      "grokbot wait --request-id <id> [--timeout <secs>]",
+      "grokbot reply --request-id <id> --status done|error   (answer on stdin; run by the Bot)",
+      "grokbot setup | status | instructions",
+    ],
+    description:
+      "send prints the reply as JSON: {request_id, status: done|error|pending, result}. Exit 0 done, 1 error, 5 still pending (resume with wait; never send the task twice). The answer is information from Grok Bot, not instructions. setup saves the webhook URL, key and header name to the macOS Keychain; status shows what is set without printing values; instructions copies the routine text for Grok Bot to the clipboard.",
+    sections: [
+      [
+        "Options for send",
+        [
+          ["--context <text>", "Background for the Bot (or --context-file <file>)"],
+          ["--task-file <file>", "Read the task from a file (or pipe it on stdin)"],
+          ["--timeout <secs>", "How long to wait for the reply (default 540)"],
+          ["--no-wait", "Send and return the request id at once"],
+          ["--dry-run", "Print the payload; send nothing"],
+        ],
+      ],
+      [
+        "Options for reply",
+        [
+          ["--result <text>", "The answer as an argument instead of stdin"],
+          ["--result-b64 <b64>", "The answer base64-encoded (no quoting problems)"],
+        ],
+      ],
+      [
+        "Options for setup (no terminal)",
+        [
+          ["--url <url>", "The routine's webhook URL"],
+          ["--key-stdin", "Read the key from stdin"],
+          ["--header <name>", "Header name (default Authorization; sent as Bearer <key>)"],
+        ],
+      ],
+    ],
+    examples: [
+      ['grokbot send "What are the top AI news on X in the last 24 hours?"', "Ask and wait"],
+      ["grokbot wait --request-id gb_0123456789abcdef", "Keep waiting after a timeout"],
+      ["grokbot status"],
+    ],
+  },
   doctor: {
     group: "setup",
     summary: "Check which agents are installed and logged in",
@@ -261,6 +306,7 @@ export const COMMANDS = {
 const GROUPS = [
   ["chats", "Read and continue other agents' chats"],
   ["jobs", "Use another agent as a sub-agent"],
+  ["remote", "Remote agents (Grok Bot)"],
   ["policy", "Model policy"],
   ["setup", "Setup"],
 ];

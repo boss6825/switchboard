@@ -17,6 +17,7 @@ import { red } from "./lib/ui.mjs";
 import * as jobs from "./lib/jobs.mjs";
 import { cmdSessions, cmdHandoff } from "./lib/sessions.mjs";
 import { cmdDoctor, cmdInstall, cmdUninstall } from "./lib/install.mjs";
+import { cmdGrokbot } from "./lib/grokbot.mjs";
 
 jobs.setScript(fs.realpathSync(fileURLToPath(import.meta.url)));
 
@@ -71,6 +72,8 @@ const COMMANDS = {
   cleanup: jobs.cmdCleanup,
   models: cmdModels,
   policy: cmdPolicy,
+  grokbot: cmdGrokbot,
+  grok: cmdGrokbot,
   doctor: cmdDoctor,
   install: cmdInstall,
   uninstall: cmdUninstall,

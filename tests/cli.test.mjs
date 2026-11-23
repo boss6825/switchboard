@@ -18,7 +18,7 @@ test("bare command and --help print the short overview, plain when piped", () =>
 
 test("every command answers --help and -h without running", () => {
   const s = sandbox();
-  for (const cmd of ["sessions", "chats", "handoff", "run", "delegate", "review", "resume", "status", "wait", "tail", "result", "cancel", "models", "cleanup", "policy", "doctor", "install", "uninstall"]) {
+  for (const cmd of ["sessions", "chats", "handoff", "run", "delegate", "review", "resume", "status", "wait", "tail", "result", "cancel", "models", "cleanup", "policy", "doctor", "install", "uninstall", "grokbot", "grok"]) {
     const r = s.run([cmd, "--help"]);
     assert.equal(r.status, 0, `${cmd}: ${r.stderr}`);
     assert.match(r.stdout, /^switchboard \w+ — /, cmd);
