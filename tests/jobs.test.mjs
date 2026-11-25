@@ -166,6 +166,60 @@ test("status, tail and cleanup", () => {
   assert.match(s.run(["cleanup", "--days", "0"]).stdout, /Removed 1/);
 });
 
+test("invalid --timeout fails before creating a job directory", () => {
+  const s = sandbox();
+  const jobs = path.join(s.home, ".switchboard", "jobs");
+  const leftover = () => (fs.existsSync(jobs) ? fs.readdirSync(jobs) : []);
+  for (const value of ["10m", "0", "-5", "Infinity", ""]) {
+    const r = s.run(["run", "codex", "--timeout", value, "Example task brief"]);
+    assert.notEqual(r.status, 0, r.stderr);
+    assert.match(r.stderr, /--timeout must be a positive number of seconds/, r.stderr);
+    assert.deepEqual(leftover(), [], `timeout ${value} left ${leftover().join(",")}`);
+  }
+  const ok = s.run(["run", "codex", "--timeout", "30", "--wait", "--wait-timeout", "60", "SCENARIO:ok"]);
+  assert.equal(ok.status, 0, ok.stderr);
+  assert.ok(jobId(ok.stdout));
+});
+
+test("cleanup removes orphan job directories after the retention period and grace window", () => {
+  const s = sandbox();
+  const jobs = path.join(s.home, ".switchboard", "jobs");
+  const oldDir = path.join(jobs, "cx-0101-abcdef");
+  const youngDir = path.join(jobs, "cx-0101-abc001");
+  const brokenDir = path.join(jobs, "cx-0101-abc002");
+  const unrelatedFile = path.join(jobs, "cx-0101-abc003");
+  fs.mkdirSync(oldDir, { recursive: true });
+  fs.writeFileSync(path.join(oldDir, "prompt.md"), "Example task brief\n");
+  const old = new Date(Date.now() - 120_000);
+  fs.utimesSync(oldDir, old, old);
+  fs.mkdirSync(youngDir, { recursive: true });
+  fs.writeFileSync(path.join(youngDir, "prompt.md"), "in-flight brief\n");
+  fs.mkdirSync(brokenDir, { recursive: true });
+  fs.writeFileSync(path.join(brokenDir, "job.json"), "{");
+  fs.utimesSync(brokenDir, old, old);
+  fs.writeFileSync(unrelatedFile, "");
+  fs.utimesSync(unrelatedFile, old, old);
+  assert.match(s.run(["cleanup"]).stdout, /Removed 0/);
+  assert.equal(fs.existsSync(oldDir), true);
+  assert.match(s.run(["cleanup", "--days", "0"]).stdout, /Removed 1/);
+  assert.equal(fs.existsSync(oldDir), false);
+  assert.equal(fs.existsSync(youngDir), true);
+  assert.equal(fs.existsSync(brokenDir), true);
+  assert.equal(fs.existsSync(unrelatedFile), true);
+});
+
+test("review with invalid --timeout does not leave a diff behind", () => {
+  const s = sandbox();
+  fs.writeFileSync(path.join(s.repo, "a.txt"), "changed\n");
+  const r = s.run(["review", "cursor", "--timeout", "10m", "focus on edge cases"]);
+  assert.notEqual(r.status, 0, r.stderr);
+  assert.match(r.stderr, /--timeout must be a positive number of seconds/, r.stderr);
+  const jobs = path.join(s.home, ".switchboard", "jobs");
+  assert.deepEqual(fs.existsSync(jobs) ? fs.readdirSync(jobs) : [], []);
+  const reviews = path.join(s.home, ".switchboard", "review-inputs");
+  assert.deepEqual(fs.existsSync(reviews) ? fs.readdirSync(reviews) : [], []);
+});
+
 test("one write lock per repository, not per folder", () => {
   const s = sandbox();
   fs.mkdirSync(path.join(s.repo, "pkg-a"));
