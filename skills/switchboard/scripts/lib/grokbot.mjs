@@ -19,7 +19,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { SB_HOME } from "./config.mjs";
-import { die, usage, parseArgs, readJSON, exists, which, tilde, readStdin, ago, CLI } from "./util.mjs";
+import { SbError, die, usage, parseArgs, readJSON, exists, which, tilde, readStdin, ago, CLI } from "./util.mjs";
 
 export const GB_HOME = path.join(SB_HOME, "grokbot");
 const REQUESTS = path.join(GB_HOME, "requests");
@@ -270,9 +270,10 @@ function prompt(label, { hidden = false } = {}) {
       err ? reject(err) : resolve(buf);
     };
     const onData = (chunk) => {
-      for (const ch of chunk.toString("utf8")) {
+      // Terminals may wrap pasted text in ESC[200~ ... ESC[201~; drop those markers.
+      for (const ch of chunk.toString("utf8").replace(/\u001b\[20[01]~/g, "")) {
         if (ch === "\r" || ch === "\n") return done();
-        if (ch === "\u0003") return done(new Error("cancelled"));
+        if (ch === "\u0003" || ch === "\u0004") return done(new SbError("setup cancelled; nothing was saved"));
         if (ch === "\u007f" || ch === "\b") {
           if (buf.length) {
             buf = buf.slice(0, -1);
