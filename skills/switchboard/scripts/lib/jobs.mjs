@@ -201,6 +201,13 @@ function pickAgent(o, fallback) {
   return a;
 }
 
+// Validate before persisting a job prompt or review diff.
+function jobTimeoutSec(o, adapter) {
+  const timeoutSec = Number(o.timeout ?? (policyFor(adapter.name).timeout || 1800));
+  if (!Number.isFinite(timeoutSec) || timeoutSec <= 0) die("--timeout must be a positive number of seconds");
+  return timeoutSec;
+}
+
 export async function cmdRun(argv, extra = {}) {
   const o = parseArgs(argv, RUN_SPEC);
   let parent = null;
@@ -252,15 +259,13 @@ export async function cmdRun(argv, extra = {}) {
       );
   }
 
+  const timeoutSec = jobTimeoutSec(o, adapter);
+
   const id = newJobId(adapter.prefix);
   const dir = jobDir(id);
   fs.mkdirSync(dir, { recursive: true });
   const brief = o.raw || parent ? prompt : `${preamble(mode, hostAgent())}\n\n--- TASK ---\n${prompt}`;
   fs.writeFileSync(path.join(dir, "prompt.md"), brief);
-
-  const pol = policyFor(adapter.name);
-  const timeoutSec = Number(o.timeout || pol.timeout || 1800);
-  if (!(timeoutSec > 0)) die("--timeout must be a positive number of seconds");
 
   const job = {
     id,
@@ -818,6 +823,7 @@ export function cmdResume(argv) {
 export function cmdReview(argv) {
   const o = parseArgs(argv, { ...RUN_SPEC, base: "value" });
   const adapter = pickAgent(o);
+  jobTimeoutSec(o, adapter);
   const cwd = path.resolve(o.cwd || process.cwd());
   const root = repoRoot(cwd);
   if (!root) die("review needs a git repository");
@@ -872,12 +878,38 @@ export function cmdReview(argv) {
 export function cmdCleanup(argv) {
   const o = parseArgs(argv, { days: "value" });
   const cutoff = Date.now() - Number(o.days || 7) * 86400_000;
+  // Dirs with no job.json are invisible to allJobs(); they used to accumulate
+  // forever. Keep a one-minute floor so `cleanup --days 0` cannot race a run
+  // that has mkdir'd but not yet written job.json.
+  const orphanCutoff = Math.min(cutoff, Date.now() - 60_000);
   let n = 0;
-  for (const j of allJobs()) {
-    if (TERMINAL.has(j.state.status) && (j.state.endedAt || Date.parse(j.createdAt)) < cutoff) {
-      fs.rmSync(jobDir(j.id), { recursive: true, force: true });
+  let entries = [];
+  try {
+    entries = fs.readdirSync(JOBS, { withFileTypes: true });
+  } catch { /* no job directories to inspect */ }
+  for (const entry of entries) {
+    const id = entry.name;
+    if (!entry.isDirectory() || !JOB_ID.test(id)) continue;
+    const dir = jobDir(id);
+    const job = loadJob(id);
+    if (!job) {
+      let orphan;
+      try {
+        orphan = fs.statSync(dir).mtimeMs < orphanCutoff &&
+          !fs.lstatSync(path.join(dir, "job.json"), { throwIfNoEntry: false });
+      } catch {
+        continue;
+      }
+      if (orphan) {
+        fs.rmSync(dir, { recursive: true, force: true });
+        n++;
+      }
+      continue;
+    }
+    if (TERMINAL.has(job.state.status) && (job.state.endedAt || Date.parse(job.createdAt)) < cutoff) {
+      fs.rmSync(dir, { recursive: true, force: true });
       n++;
     }
   }
-  console.log(`Removed ${n} finished job record(s) older than ${o.days || 7} day(s). Worktrees are left in place; remove them with git worktree remove.`);
+  console.log(`Removed ${n} job record(s) older than ${o.days || 7} day(s). Worktrees are left in place; remove them with git worktree remove.`);
 }
