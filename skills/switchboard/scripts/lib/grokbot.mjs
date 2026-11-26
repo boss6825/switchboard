@@ -83,6 +83,14 @@ export function normalizeKey(raw) {
   return k.trim();
 }
 
+// A key is one unbroken string. Pasted sentences, URLs and multi-line text are mistakes.
+export function badKey(key) {
+  if (!key) return "the key is empty";
+  if (/\s/.test(key) || key.length > 512 || /^https?:\/\//i.test(key))
+    return "that does not look like a key (a key is one string with no spaces, not text from the chat or a URL). Copy it from the app: Bot name > Details > the routine > Webhook > key.";
+  return null;
+}
+
 // Headers for one delivery. A key that starts with whsec_ is a Standard
 // Webhooks signing secret (Grok automations); sign the body instead of
 // sending the key.
@@ -305,10 +313,9 @@ async function cmdSetup(argv) {
   if (!url) die("no https:// URL found in what you pasted");
   safeUrl(url);
   const key = normalizeKey(o["key-stdin"] ? readStdin() : await prompt("Key (hidden): ", { hidden: true }));
-  if (!key) die("the key is empty");
-  let header = o.header;
-  if (!header && tty) header = (await prompt(`Header name [${DEFAULT_HEADER}]: `)).trim();
-  header = header || DEFAULT_HEADER;
+  const why = badKey(key);
+  if (why) die(why);
+  const header = o.header || DEFAULT_HEADER; // Grok Bot sends "Authorization: Bearer <key>"; --header only for others
   if (!/^[A-Za-z0-9-]+$/.test(header)) die("the header name may only contain letters, digits and dashes");
   keychainSet(KEYS.url, url);
   keychainSet(KEYS.secret, key);
@@ -399,7 +406,7 @@ const GUIDE = `Setting up Grok Bot (once per Mac):
   1. Paste the message now on your clipboard into a chat with your Grok Bot.
      It creates a routine with a webhook and replies with the webhook URL.
   2. Paste that URL below. Pasting the Bot's whole reply works; the URL is picked out.
-  3. Open the routine (Bot name > Details > the routine > Webhook), click "key" to copy it, and paste it below. Nothing shows as you type.
+  3. Open the routine in the app (Bot name > Details > the routine > Webhook), click "key" to copy it, and paste it below.\n     The key is a secret string from that panel, not text from the chat. Nothing shows as you type.
   4. In Grok Bot settings, turn on "Execution on this computer" for this Mac.
 Then check it: ${CLI} grokbot test
 `;

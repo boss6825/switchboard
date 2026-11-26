@@ -204,3 +204,11 @@ test("test sends a ping and prints the reply; instructions ask the Bot to create
   const ins = s.run(["grokbot", "instructions", "--print"], { env: setup(s) });
   assert.match(ins.stdout, /^Create a routine named "Switchboard" with a webhook trigger/);
 });
+
+test("badKey accepts one string and rejects pasted text or URLs", async () => {
+  const { badKey } = await import("../skills/switchboard/scripts/lib/grokbot.mjs");
+  assert.equal(badKey("abc123_DEF-456"), null);
+  assert.match(badKey("The webhook routine is saved. Each call"), /does not look like a key/);
+  assert.match(badKey("https://api.example.invalid/hook"), /does not look like a key/);
+  assert.match(badKey(""), /empty/);
+});
