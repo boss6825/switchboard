@@ -92,9 +92,12 @@ sb grokbot wait --request-id <id>                       # still pending: keep wa
   1. Run `sb grokbot instructions` (copies a message for their Bot), then paste it into a
      chat with their Grok Bot in the Grok Bot desktop app. The Bot creates a routine with a
      webhook and replies with the webhook URL.
-  2. Run `sb grokbot setup` **in their own terminal** (not through you). Paste the URL (the
-     Bot's whole reply is fine), then the key, which they copy from the routine in the app:
-     Bot name > Details > the routine > Webhook > key. The key input is hidden.
+  2. `sb grokbot setup` in their own terminal. Paste the URL (the Bot's whole reply is fine). Then
+     the key, which they get in the Grok Bot desktop app, right-hand panel: under "Routines",
+     **click the routine's name** (not its on/off switch; it is named like "Coding agent task
+     inbox, When a webhook fires"). A panel opens with a Webhook section (POST to / key /
+     header). Click the copy icon next to "key" (the "header" field works too), and paste it at
+     the hidden prompt. Do not assume they know the app: say these clicks.
   3. In Grok Bot settings, turn on "Execution on this computer" for this Mac.
   4. Run `sb grokbot test`; it should print `pong`.
   Never ask for the URL or key in chat, never read the Keychain, and do not run `setup`

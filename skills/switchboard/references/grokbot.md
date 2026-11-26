@@ -38,8 +38,11 @@ Walk the user through these four steps (see SKILL.md). Only the user can do 2 an
    their Grok Bot (desktop app). The Bot creates a routine named "Switchboard" with a webhook
    trigger and replies with the URL.
 2. `sb grokbot setup` in their terminal: paste the URL (or the Bot's whole reply), then the
-   key (hidden). The key is in the app under Bot name > Details > the routine > Webhook >
-   key. Header name: press Return for the default (`Authorization`, sent as `Bearer <key>`).
+   key (hidden). Where the key is, in the Grok Bot desktop app: in the right-hand panel,
+   under "Routines", click the routine's **name** (not its on/off switch). A panel opens with a
+   Webhook section: **POST to**, **key**, **header**, each with a copy icon (an eye icon shows
+   the hidden value). Copy the key; the header field works too (it is `Authorization: Bearer
+   <key>`, and setup strips the prefix). The key is one string, never text from the chat.
 3. Grok Bot settings: turn on "Execution on this computer" for this Mac. With the default
    "Ask every time" they approve each reply once.
 4. `sb grokbot test`: sends a ping, waits for `pong`.

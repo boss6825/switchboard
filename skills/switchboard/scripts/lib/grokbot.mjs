@@ -87,7 +87,7 @@ export function normalizeKey(raw) {
 export function badKey(key) {
   if (!key) return "the key is empty";
   if (/\s/.test(key) || key.length > 512 || /^https?:\/\//i.test(key))
-    return "that does not look like a key (a key is one string with no spaces, not text from the chat or a URL). Copy it from the app: Bot name > Details > the routine > Webhook > key.";
+    return "that does not look like a key (a key is one string with no spaces, not text from the chat or a URL). In the Grok Bot app, click the routine's name under Routines (right-hand panel), then copy the key in its Webhook section.";
   return null;
 }
 
@@ -395,18 +395,23 @@ function cmdInstructions(argv) {
   const text = botMessage();
   if (!o.print && copyToClipboard(text)) {
     console.log("Copied a message for your Grok Bot to the clipboard. Paste it into a chat with your Bot.");
-    console.log("It creates the routine and its webhook, and replies with the URL. The key is in the routine's panel: Bot name > Details > the routine > Webhook.");
+    console.log("It creates the routine and its webhook, and replies with the URL. The key: in the app's right-hand panel, click the routine's name under Routines, then copy the key in its Webhook section.");
     console.log(`Then: ${CLI} grokbot setup`);
     return;
   }
   console.log(text);
 }
 
-const GUIDE = `Setting up Grok Bot (once per Mac):
+const GUIDE = `Setting up Grok Bot (once per Mac). You need the Grok Bot desktop app open.
   1. Paste the message now on your clipboard into a chat with your Grok Bot.
-     It creates a routine with a webhook and replies with the webhook URL.
-  2. Paste that URL below. Pasting the Bot's whole reply works; the URL is picked out.
-  3. Open the routine in the app (Bot name > Details > the routine > Webhook), click "key" to copy it, and paste it below.\n     The key is a secret string from that panel, not text from the chat. Nothing shows as you type.
+     It creates a routine and replies with a webhook URL.
+  2. Paste that URL below (pasting the Bot's whole reply works; the URL is picked out).
+  3. Now get the key, from the app's right-hand panel:
+       - Under "Routines", click the routine's NAME (not its on/off switch). The Bot calls it
+         something like "Coding agent task inbox", "When a webhook fires".
+       - A panel opens with a "Webhook" section: POST to / key / header.
+       - Click the copy icon next to "key" (or "header"; either works), then paste it below.
+     The key is a secret string from that panel, never text from the chat. Nothing shows as you type.
   4. In Grok Bot settings, turn on "Execution on this computer" for this Mac.
 Then check it: ${CLI} grokbot test
 `;

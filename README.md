@@ -312,7 +312,7 @@ OpenCode support is built from OpenCode's documentation and source (`run --forma
 One-time setup per Mac (an agent will walk you through it if you ask it to "set up Grok Bot"):
 
 1. `sw grokbot instructions` copies a message for your Bot. Paste it into a chat with your Grok Bot. It creates a routine with a webhook and replies with the URL.
-2. `sw grokbot setup`: paste the URL, then the key (hidden). The key is in the app: Bot name > Details > the routine > Webhook > key. Both go to the macOS Keychain.
+2. `sw grokbot setup`: paste the URL, then the key (hidden). Where the key is: in the Grok Bot desktop app, right-hand panel, under "Routines", click the routine's name (not its on/off switch); the panel that opens has a Webhook section with the key and a copy icon. Both go to the macOS Keychain.
 3. In Grok Bot settings, turn on "Execution on this computer" for your Mac, so the Bot can deliver the reply.
 4. `sw grokbot test` sends a ping and waits for `pong`.
 
