@@ -180,3 +180,27 @@ test("status shows what is set without printing values; instructions name the sc
   assert.ok(ins.stdout.includes(fs.realpathSync(SB)), "instructions carry the absolute script path");
   assert.doesNotMatch(ins.stdout, new RegExp(KEY));
 });
+
+test("extractUrl picks the webhook URL out of a pasted sentence", async () => {
+  const { extractUrl } = await import("../skills/switchboard/scripts/lib/grokbot.mjs");
+  assert.equal(extractUrl("https://hooks.example.invalid/a/b-1"), "https://hooks.example.invalid/a/b-1");
+  assert.equal(extractUrl("Point it at `https://hooks.example.invalid/a/b-1`. Then copy the key."), "https://hooks.example.invalid/a/b-1");
+  assert.equal(extractUrl("here: https://hooks.example.invalid/x."), "https://hooks.example.invalid/x");
+  assert.equal(extractUrl("no url here"), "");
+});
+
+test("test sends a ping and prints the reply; instructions ask the Bot to create the routine", async () => {
+  const s = sandbox();
+  const bot = await fakeGrokBot({ reply: () => "pong" });
+  try {
+    const env = { ...setup(s), GROKBOT_WEBHOOK_URL: bot.url, GROKBOT_WEBHOOK_SECRET: KEY };
+    const r = await runAsync(s, ["grokbot", "test"], env);
+    assert.equal(r.status, 0, r.stderr);
+    assert.equal(JSON.parse(r.stdout).result, "pong");
+    assert.match(bot.calls[0].payload.task, /Reply with exactly the word: pong/);
+  } finally {
+    bot.server.close();
+  }
+  const ins = s.run(["grokbot", "instructions", "--print"], { env: setup(s) });
+  assert.match(ins.stdout, /^Create a routine named "Switchboard" with a webhook trigger/);
+});

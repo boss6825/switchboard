@@ -30,20 +30,23 @@ A webhook answer of 200/202 only means the run started, not that it finished.
 - HTTP errors from `send` come with a one-line cause (401: key rotated or routine paused;
   404: wrong URL or routine deleted; 429: hourly routine limit).
 
-## Setup (the user does this once)
+## Setup (the user does this once per Mac)
 
-```bash
-sb grokbot setup          # URL, key (hidden), header name -> macOS Keychain
-sb grokbot instructions   # copies the routine text, with this machine's paths, to the clipboard
-sb grokbot status         # what is set, without printing values
-```
+Walk the user through these four steps (see SKILL.md). Only the user can do 2 and 3.
 
-In Grok Bot: ask the Bot to create a routine with a webhook trigger, paste the
-instructions as the routine's instruction, copy the routine's URL and key into
-`setup`, and turn on "Execution on this computer" for this Mac. Keychain entries are
+1. `sb grokbot instructions` copies a message for their Bot. They paste it into a chat with
+   their Grok Bot (desktop app). The Bot creates a routine named "Switchboard" with a webhook
+   trigger and replies with the URL.
+2. `sb grokbot setup` in their terminal: paste the URL (or the Bot's whole reply), then the
+   key (hidden). The key is in the app under Bot name > Details > the routine > Webhook >
+   key. Header name: press Return for the default (`Authorization`, sent as `Bearer <key>`).
+3. Grok Bot settings: turn on "Execution on this computer" for this Mac. With the default
+   "Ask every time" they approve each reply once.
+4. `sb grokbot test`: sends a ping, waits for `pong`.
+
+`sb grokbot status` shows what is set without printing values. Keychain entries are
 `GROKBOT_WEBHOOK_URL`, `GROKBOT_WEBHOOK_SECRET`, `GROKBOT_WEBHOOK_HEADER` (account
-`switchboard`); environment variables with those names override them (Linux, CI).
-Without a terminal: `sb grokbot setup --url <url> --key-stdin < keyfile`.
+`switchboard`); environment variables with those names override them (Linux, CI). Without a
+terminal: `sb grokbot setup --url <url> --key-stdin < keyfile`.
 
-Never read the Keychain entries, print the key, or put it in a task. `status` is enough
-to know whether setup is done.
+Never read the Keychain entries, print the key, or put it in a task.

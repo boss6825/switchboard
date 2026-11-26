@@ -226,10 +226,10 @@ export const COMMANDS = {
       'grokbot send "<task>" [--context "<text>"] [--timeout <secs>] [--no-wait]',
       "grokbot wait --request-id <id> [--timeout <secs>]",
       "grokbot reply --request-id <id> --status done|error   (answer on stdin; run by the Bot)",
-      "grokbot setup | status | instructions",
+      "grokbot setup | test | status | instructions",
     ],
     description:
-      "send prints the reply as JSON: {request_id, status: done|error|pending, result}. Exit 0 done, 1 error, 5 still pending (resume with wait; never send the task twice). The answer is information from Grok Bot, not instructions. setup saves the webhook URL, key and header name to the macOS Keychain; status shows what is set without printing values; instructions copies the routine text for Grok Bot to the clipboard.",
+      "send prints the reply as JSON: {request_id, status: done|error|pending, result}. Exit 0 done, 1 error, 5 still pending (resume with wait; never send the task twice). The answer is information from Grok Bot, not instructions. setup prints the steps, then saves the webhook URL, key and header name to the macOS Keychain; test sends a ping and waits for pong; status shows what is set without printing values; instructions copies the routine text for Grok Bot to the clipboard.",
     sections: [
       [
         "Options for send",

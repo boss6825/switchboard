@@ -309,12 +309,12 @@ OpenCode support is built from OpenCode's documentation and source (`run --forma
 
 [Grok Bot](https://docs.x.ai/grok-bot/overview) runs on xAI's cloud computer and has no official CLI, so Switchboard reaches it through a routine's webhook. Say *"ask GrokBot …"* to any agent; it runs `sw grokbot send`, Grok Bot does the task (it searches X itself, with no X API bill), runs `sw grokbot reply` on your Mac with the answer, and the agent gets it back as JSON.
 
-One-time setup:
+One-time setup per Mac (an agent will walk you through it if you ask it to "set up Grok Bot"):
 
-1. In Grok Bot, ask a Bot to create a routine with a webhook trigger.
-2. `sw grokbot setup` saves the routine's URL, key (hidden input) and header name to the macOS Keychain.
-3. `sw grokbot instructions` copies the routine text, with this machine's paths filled in. Paste it as the routine's instruction.
-4. Turn on "Execution on this computer" for your Mac in Grok Bot settings, so the Bot can deliver the reply.
+1. `sw grokbot instructions` copies a message for your Bot. Paste it into a chat with your Grok Bot. It creates a routine with a webhook and replies with the URL.
+2. `sw grokbot setup`: paste the URL, then the key (hidden). The key is in the app: Bot name > Details > the routine > Webhook > key. Both go to the macOS Keychain.
+3. In Grok Bot settings, turn on "Execution on this computer" for your Mac, so the Bot can deliver the reply.
+4. `sw grokbot test` sends a ping and waits for `pong`.
 
 `sw grokbot status` shows what is set without printing it. Why the webhook and not the community Grok Bot CLIs: [docs/architecture.md](docs/architecture.md).
 

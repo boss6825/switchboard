@@ -298,9 +298,11 @@ async function cmdSetup(argv) {
   const tty = process.stdin.isTTY && !o["key-stdin"];
   if (!tty && !(o.url && o["key-stdin"])) usage("setup asks questions in a terminal. Without one: grokbot setup --url <url> --key-stdin [--header <name>] < key-file");
   if (tty) {
-    process.stderr.write("Open the routine in Grok Bot on desktop. Its Webhook section shows POST to, key and header.\n");
+    const copied = copyToClipboard(botMessage());
+    process.stderr.write(copied ? GUIDE : GUIDE.replace("the message now on your clipboard", `the text from: ${CLI} grokbot instructions --print`));
   }
-  const url = (o.url || (await prompt("Webhook URL (POST to): "))).trim();
+  const url = extractUrl(o.url || (await prompt("Webhook URL (or the Bot's reply): ")));
+  if (!url) die("no https:// URL found in what you pasted");
   safeUrl(url);
   const key = normalizeKey(o["key-stdin"] ? readStdin() : await prompt("Key (hidden): ", { hidden: true }));
   if (!key) die("the key is empty");
@@ -312,7 +314,7 @@ async function cmdSetup(argv) {
   keychainSet(KEYS.secret, key);
   keychainSet(KEYS.header, header);
   console.log(`Saved ${KEYS.url}, ${KEYS.secret} and ${KEYS.header} to the macOS Keychain.`);
-  console.log(`Next: ${CLI} grokbot instructions   (copies the routine text for Grok Bot)`);
+  console.log(`Next: turn on "Execution on this computer" for this Mac in Grok Bot settings, then run: ${CLI} grokbot test`);
 }
 
 function cmdStatus(argv) {
@@ -342,7 +344,8 @@ function cmdStatus(argv) {
   console.log(`Replies folder  ${out.replies}`);
   console.log(`Waiting         ${out.waiting} request(s) with no reply yet`);
   for (const r of reqs.slice(0, 5)) console.log(`  ${r.request_id}  ${r.status.padEnd(11)} sent ${ago(r.sentAt)}`);
-  if (!out.ready) console.log(`\nNot ready. Run: ${CLI} grokbot setup`);
+  if (!out.ready) console.log(`\nNot set up. Run ${CLI} grokbot setup (it prints the steps). Once per Mac.`);
+  else if (!reqs.length) console.log(`\nSaved. Check the round trip: ${CLI} grokbot test`);
 }
 
 export function routineInstructions() {
@@ -369,27 +372,53 @@ GROKBOT_REPLY
 This needs "Execution on this computer" turned on for my Mac in Grok Bot settings.`;
 }
 
+// A message the user pastes into a chat with their Bot. The Bot creates (or
+// updates) the routine, adds the webhook trigger, and replies with the URL.
+export function botMessage() {
+  return `Create a routine named "Switchboard" with a webhook trigger (if it already exists, update it). When you are done, tell me its webhook URL. Its instruction is:\n\n${routineInstructions()}`;
+}
+
+function copyToClipboard(text) {
+  const pb = process.platform === "darwin" && which("pbcopy");
+  return !!pb && spawnSync(pb, [], { input: text }).status === 0;
+}
+
 function cmdInstructions(argv) {
   const o = parseArgs(argv, { print: "bool" });
-  const text = routineInstructions();
-  const pb = !o.print && process.platform === "darwin" && which("pbcopy");
-  if (pb) {
-    const r = spawnSync(pb, [], { input: text });
-    if (r.status === 0) {
-      console.log(`Copied the routine instructions (${text.split("\n").length} lines) to the clipboard.`);
-      console.log("Paste them into the Grok Bot routine's instruction (ask the Bot to edit the routine), and make sure the routine has a webhook trigger.");
-      console.log(`Reply command points at ${tilde(scriptPath())}. Print the text instead with --print.`);
-      return;
-    }
+  const text = botMessage();
+  if (!o.print && copyToClipboard(text)) {
+    console.log("Copied a message for your Grok Bot to the clipboard. Paste it into a chat with your Bot.");
+    console.log("It creates the routine and its webhook, and replies with the URL. The key is in the routine's panel: Bot name > Details > the routine > Webhook.");
+    console.log(`Then: ${CLI} grokbot setup`);
+    return;
   }
   console.log(text);
 }
 
-const SUB = { send: cmdSend, ask: cmdSend, wait: cmdWait, reply: cmdReply, setup: cmdSetup, status: cmdStatus, instructions: cmdInstructions };
+const GUIDE = `Setting up Grok Bot (once per Mac):
+  1. Paste the message now on your clipboard into a chat with your Grok Bot.
+     It creates a routine with a webhook and replies with the webhook URL.
+  2. Paste that URL below. Pasting the Bot's whole reply works; the URL is picked out.
+  3. Open the routine (Bot name > Details > the routine > Webhook), click "key" to copy it, and paste it below. Nothing shows as you type.
+  4. In Grok Bot settings, turn on "Execution on this computer" for this Mac.
+Then check it: ${CLI} grokbot test
+`;
+
+// Pull the https URL out of whatever was pasted (a bare URL, or the Bot's sentence).
+export function extractUrl(raw) {
+  const m = String(raw || "").match(/https?:\/\/[^\s"'`<>)\]]+/i);
+  return m ? m[0].replace(/[.,;:]+$/, "") : "";
+}
+
+async function cmdTest() {
+  await cmdSend(["Reply with exactly the word: pong. This is a connection test from Switchboard.", "--timeout", "180"]);
+}
+
+const SUB = { test: cmdTest, send: cmdSend, ask: cmdSend, wait: cmdWait, reply: cmdReply, setup: cmdSetup, status: cmdStatus, instructions: cmdInstructions };
 
 export async function cmdGrokbot(argv) {
   const [sub, ...rest] = argv;
   const fn = SUB[sub];
-  if (!fn) usage(`usage: grokbot send|wait|reply|setup|status|instructions${sub ? ` (not "${sub}")` : ""}`);
+  if (!fn) usage(`usage: grokbot send|wait|reply|setup|test|status|instructions${sub ? ` (not "${sub}")` : ""}`);
   await fn(rest);
 }
