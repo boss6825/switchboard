@@ -1,6 +1,6 @@
 {
   "name": "switchboard-pro",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Let Claude Code, Codex, Cursor, OpenCode and Antigravity read each other's chats and use each other as sub-agents.",
   "type": "module",
   "bin": {
